@@ -18,7 +18,7 @@ load_dotenv()
 
 # Configuration
 API_KEY = os.getenv("GOOGLE_API_KEY")
-MODEL_DESCRIBE = "gemini-2.5-flash-lite"
+MODEL_DESCRIBE = "gemini-2.5-flash"
 
 # Initialize Gemini client
 client = genai.Client(api_key=API_KEY)

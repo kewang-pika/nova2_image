@@ -97,6 +97,8 @@ if "variations" not in st.session_state:
     st.session_state.variations = []
 if "variation_prompts" not in st.session_state:
     st.session_state.variation_prompts = []
+if "variation_full_prompts" not in st.session_state:
+    st.session_state.variation_full_prompts = []
 if "original_selfie_bytes" not in st.session_state:
     st.session_state.original_selfie_bytes = None
 if "selfie_description" not in st.session_state:
@@ -437,6 +439,7 @@ if generate_clicked:
                 # Clear previous variations when generating new first image
                 st.session_state.variations = []
                 st.session_state.variation_prompts = []
+                st.session_state.variation_full_prompts = []
 
                 st.success("Image generated successfully!")
 
@@ -516,7 +519,7 @@ if st.session_state.generated_image and st.session_state.image_description and s
 
                 # Step 2: Generate all 4 variations IN PARALLEL
                 with st.status("Generating 4 images in parallel...") as status:
-                    variations = generate_variations(
+                    result = generate_variations(
                         original_selfie_bytes=st.session_state.original_selfie_bytes,
                         generated_image_bytes=st.session_state.generated_image,
                         selfie_description=st.session_state.selfie_description,
@@ -527,8 +530,10 @@ if st.session_state.generated_image and st.session_state.image_description and s
                     )
                     status.update(label="All 4 variations generated!", state="complete")
 
-                st.session_state.variations = variations
+                # Store images and full prompts separately
+                st.session_state.variations = result["images"]
                 st.session_state.variation_prompts = var_prompts
+                st.session_state.variation_full_prompts = result["full_prompts"]
                 st.success("Generated 4 variations!")
 
             except Exception as e:
@@ -546,9 +551,12 @@ if st.session_state.get("variations") and len(st.session_state.variations) > 0:
 
     for i, img_bytes in enumerate(st.session_state.variations):
         if i < len(all_cols) and img_bytes:
-            prompt_text = st.session_state.variation_prompts[i] if i < len(st.session_state.variation_prompts) else f"Variation {i+1}"
             with all_cols[i]:
-                st.image(img_bytes, caption=f"V{i+1}: {prompt_text[:40]}...", width=200)
+                st.image(img_bytes, width=200)
+                # Show full structured prompt in expander
+                full_prompt = st.session_state.get("variation_full_prompts", [])[i] if i < len(st.session_state.get("variation_full_prompts", [])) else ""
+                with st.expander(f"📝 V{i+1} Full Prompt"):
+                    st.code(full_prompt, language=None)
                 with st.expander(f"🔍 V{i+1} Full Size"):
                     st.image(img_bytes)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
