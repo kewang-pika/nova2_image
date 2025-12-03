@@ -1,10 +1,12 @@
 """
 Nova2 Image Creator - Streamlit UI
 Web interface for image editing using Gemini gemini-3-pro-image-preview
+With Asset Closet and @mention support
 """
 
 import os
 import io
+import base64
 import streamlit as st
 from PIL import Image
 from datetime import datetime
@@ -14,15 +16,30 @@ from image_creator import (
     generate_image,
     save_image,
     image_to_base64,
+    parse_mentions,
     MODEL_IMAGE,
     OUTPUT_DIR,
 )
+
+from closet import (
+    save_asset,
+    get_asset,
+    get_assets,
+    get_all_assets,
+    delete_asset,
+    list_all_asset_names,
+    CATEGORIES,
+    init_closet,
+)
+
+# Initialize closet
+init_closet()
 
 # Page config
 st.set_page_config(
     page_title="Nova2 Image Creator",
     page_icon="🎨",
-    layout="centered"
+    layout="wide"
 )
 
 # Custom CSS
@@ -30,19 +47,33 @@ st.markdown("""
 <style>
     .stButton > button {
         width: 100%;
-        background-color: #4CAF50;
-        color: white;
-        font-weight: bold;
     }
-    .stButton > button:hover {
-        background-color: #45a049;
+    .main-generate-btn > button {
+        background-color: #4CAF50 !important;
+        color: white !important;
+        font-weight: bold !important;
+        font-size: 1.1em !important;
+        padding: 0.6em 1em !important;
+    }
+    .asset-pill {
+        display: inline-block;
+        background-color: #e0e0e0;
+        padding: 4px 12px;
+        border-radius: 16px;
+        margin: 2px 4px;
+        font-size: 0.9em;
+    }
+    .asset-thumbnail {
+        border-radius: 8px;
+        cursor: pointer;
+    }
+    .section-header {
+        font-size: 1.1em;
+        font-weight: 600;
+        margin-bottom: 0.5em;
     }
 </style>
 """, unsafe_allow_html=True)
-
-# Title
-st.title("Nova2 Image Creator")
-st.caption(f"Model: {MODEL_IMAGE}")
 
 # Initialize session state
 if "generated_image" not in st.session_state:
@@ -51,9 +82,38 @@ if "final_prompt" not in st.session_state:
     st.session_state.final_prompt = None
 if "image_description" not in st.session_state:
     st.session_state.image_description = None
+if "attached_assets" not in st.session_state:
+    st.session_state.attached_assets = []
+if "prompt_text" not in st.session_state:
+    st.session_state.prompt_text = ""
+if "detected_style" not in st.session_state:
+    st.session_state.detected_style = None
+if "used_assets" not in st.session_state:
+    st.session_state.used_assets = []
 
-# Sidebar options
+
+def attach_asset(asset_name):
+    """Add asset to attached list."""
+    if asset_name not in st.session_state.attached_assets:
+        st.session_state.attached_assets.append(asset_name)
+
+
+def detach_asset(asset_name):
+    """Remove asset from attached list."""
+    if asset_name in st.session_state.attached_assets:
+        st.session_state.attached_assets.remove(asset_name)
+
+
+def get_asset_thumbnail(asset):
+    """Get base64 thumbnail for display."""
+    if asset and "image_bytes" in asset:
+        return f"data:image/jpeg;base64,{base64.b64encode(asset['image_bytes']).decode()}"
+    return None
+
+
+# ===== SIDEBAR =====
 with st.sidebar:
+    # Settings Section
     st.header("Settings")
 
     aspect_ratio = st.selectbox(
@@ -75,48 +135,213 @@ with st.sidebar:
         help="Use AI to analyze image and improve your prompt"
     )
 
-# Main content
-col1, col2 = st.columns(2)
+    st.divider()
 
-with col1:
-    st.subheader("Input Image")
+    # Asset Closet Section
+    with st.expander("Asset Closet", expanded=False):
+        # Category tabs
+        tab_people, tab_outfit, tab_location, tab_style = st.tabs([
+            "👤 People", "👔 Outfit", "📍 Location", "🎨 Style"
+        ])
+
+        category_tabs = {
+            "people": tab_people,
+            "outfit": tab_outfit,
+            "location": tab_location,
+            "style": tab_style
+        }
+
+        for category, tab in category_tabs.items():
+            with tab:
+                assets = get_assets(category)
+
+                if assets:
+                    # Display assets in 3-column grid
+                    cols = st.columns(3)
+                    for i, asset in enumerate(assets):
+                        with cols[i % 3]:
+                            thumb = get_asset_thumbnail(asset)
+                            if thumb:
+                                st.image(thumb, caption=asset['name'], use_container_width=True)
+
+                            col_add, col_del = st.columns(2)
+                            with col_add:
+                                if st.button("➕", key=f"add_{category}_{asset['name']}", help="Attach"):
+                                    attach_asset(asset['name'])
+                                    st.rerun()
+                            with col_del:
+                                if st.button("🗑️", key=f"del_{category}_{asset['name']}", help="Delete"):
+                                    delete_asset(asset['name'], category)
+                                    st.rerun()
+                else:
+                    st.caption("No assets yet")
+
+        st.divider()
+
+        # Add New Asset Form
+        st.markdown("**Add New Asset**")
+
+        new_asset_name = st.text_input("Name", key="new_asset_name", placeholder="e.g., redDress")
+        new_asset_category = st.selectbox("Category", options=CATEGORIES, key="new_asset_category")
+        new_asset_file = st.file_uploader(
+            "Image",
+            type=["jpg", "jpeg", "png", "webp"],
+            key="new_asset_file"
+        )
+
+        if st.button("Add to Closet", key="add_to_closet"):
+            if new_asset_name and new_asset_file:
+                with st.spinner("Adding asset..."):
+                    try:
+                        asset_bytes = new_asset_file.read()
+                        result = save_asset(new_asset_name, new_asset_category, asset_bytes)
+                        st.success(f"Added '{result['name']}' to {new_asset_category}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+            else:
+                st.warning("Please provide name and image")
+
+
+# ===== MAIN CONTENT =====
+st.title("Nova2 Image Creator")
+st.caption(f"Model: {MODEL_IMAGE}")
+
+# Two-column layout
+col_left, col_right = st.columns([1, 1])
+
+with col_left:
+    # Upload Section
+    st.markdown("**📷 Your Photo**")
     uploaded_file = st.file_uploader(
-        "Upload an image",
+        "Upload base image",
         type=["jpg", "jpeg", "png", "webp"],
-        help="Upload the image you want to edit"
+        help="Upload the image you want to edit",
+        label_visibility="collapsed"
     )
 
     if uploaded_file:
         image_bytes = uploaded_file.read()
-        st.image(image_bytes, caption="Uploaded Image", use_container_width=True)
+        uploaded_file.seek(0)
+        # Small display thumbnail
+        st.image(image_bytes, caption="Base Image", width=200)
+        with st.expander("🔍 View Full Size"):
+            st.image(image_bytes)  # Full resolution, no constraints
 
-with col2:
-    st.subheader("Result")
-    result_placeholder = st.empty()
+with col_right:
+    # Attached Assets Section (moved to right column)
+    st.markdown("**🏷️ Attached Assets**")
 
-    if st.session_state.generated_image:
-        result_placeholder.image(
-            st.session_state.generated_image,
-            caption="Generated Image",
-            use_container_width=True
-        )
+    if st.session_state.attached_assets:
+        # Display attached assets as removable pills
+        cols = st.columns(min(len(st.session_state.attached_assets) + 1, 4))
+        for i, asset_name in enumerate(st.session_state.attached_assets):
+            with cols[i % 4]:
+                if st.button(f"{asset_name} ✕", key=f"remove_{asset_name}"):
+                    detach_asset(asset_name)
+                    st.rerun()
+
+        # Show thumbnails of attached assets
+        asset_cols = st.columns(min(len(st.session_state.attached_assets), 4))
+        for i, asset_name in enumerate(st.session_state.attached_assets):
+            asset = get_asset(asset_name)
+            if asset:
+                with asset_cols[i % 4]:
+                    thumb = get_asset_thumbnail(asset)
+                    if thumb:
+                        st.image(thumb, caption=asset_name, width=80)
     else:
-        result_placeholder.info("Generated image will appear here")
+        st.caption("No assets attached. Type @ in prompt to see suggestions.")
 
-# Prompt input
-st.subheader("Editing Prompt")
+# Prompt Input Section
+st.markdown("**✏️ What do you want to create?**")
+
+# Initialize pending insert in session state
+if "pending_insert" not in st.session_state:
+    st.session_state.pending_insert = None
+
+# Apply pending insert BEFORE widget renders
+if st.session_state.pending_insert:
+    st.session_state.prompt_input = st.session_state.pending_insert
+    st.session_state.pending_insert = None
+
 prompt = st.text_area(
-    "Describe how to edit the image",
-    placeholder="e.g., 'Make it look like a painting', 'Add a sunset background', 'Change the outfit to casual wear'",
-    height=100
+    "Editing prompt",
+    placeholder="e.g., 'I'm wearing @redDress at @beach', 'Make it look like a painting'",
+    height=100,
+    label_visibility="collapsed",
+    key="prompt_input"
 )
 
-# Show structured output (description + editing prompt) if available
-if st.session_state.image_description:
-    st.code(st.session_state.image_description, language=None)
+# Check if user typed @ - show asset picker
+all_asset_names = list_all_asset_names()
+show_picker = prompt and prompt.endswith('@')
 
-# Generate button
-if st.button("Generate", type="primary", disabled=not (uploaded_file and prompt)):
+if show_picker and all_asset_names:
+    st.markdown("**📎 Quick Insert Asset:**")
+
+    # Group assets by category for better UX
+    all_assets_grouped = get_all_assets()
+
+    # Create columns for each category with assets
+    cols = st.columns(4)
+    col_idx = 0
+
+    for category in CATEGORIES:
+        assets = all_assets_grouped.get(category, [])
+        if assets:
+            with cols[col_idx % 4]:
+                st.caption(f"**{category.title()}**")
+                for asset in assets[:5]:  # Limit to 5 per category
+                    if st.button(
+                        f"@{asset['name']}",
+                        key=f"insert_{category}_{asset['name']}",
+                        use_container_width=True
+                    ):
+                        # Set pending insert (replace trailing @)
+                        st.session_state.pending_insert = prompt[:-1] + f"@{asset['name']} "
+                        st.rerun()
+            col_idx += 1
+
+elif all_asset_names:
+    # Show assets organized by category
+    st.caption("💡 Type `@` to insert an asset:")
+    all_assets_grouped = get_all_assets()
+    category_icons = {"people": "👤", "outfit": "👔", "location": "📍", "style": "🎨"}
+
+    for category in CATEGORIES:
+        assets = all_assets_grouped.get(category, [])
+        if assets:
+            names = " ".join([f"`@{a['name']}`" for a in assets])
+            st.caption(f"{category_icons.get(category, '')} {category.title()}: {names}")
+
+# Auto-attach mentioned assets from prompt
+if prompt:
+    mentions = parse_mentions(prompt)
+    for mention in mentions:
+        if mention not in st.session_state.attached_assets:
+            # Check if asset exists
+            if get_asset(mention):
+                attach_asset(mention)
+
+# Enhanced Prompt Display (collapsible)
+if st.session_state.image_description:
+    # Show detected style as a badge
+    if st.session_state.detected_style:
+        st.markdown(f"**🎨 Style:** `{st.session_state.detected_style}`")
+    with st.expander("📝 Enhanced Prompt", expanded=False):
+        st.code(st.session_state.image_description, language=None)
+
+# Generate Button
+st.markdown('<div class="main-generate-btn">', unsafe_allow_html=True)
+generate_clicked = st.button(
+    "🎨 Generate Image",
+    type="primary",
+    use_container_width=True
+)
+st.markdown('</div>', unsafe_allow_html=True)
+
+if generate_clicked:
     if not uploaded_file:
         st.error("Please upload an image first")
     elif not prompt:
@@ -124,22 +349,42 @@ if st.button("Generate", type="primary", disabled=not (uploaded_file and prompt)
     else:
         with st.spinner("Processing..."):
             try:
-                # Reset file pointer
+                # Reset file pointer and read image
                 uploaded_file.seek(0)
                 image_bytes = uploaded_file.read()
 
+                # Resolve attached assets
+                mentioned_assets = []
+                for asset_name in st.session_state.attached_assets:
+                    asset = get_asset(asset_name)
+                    if asset:
+                        mentioned_assets.append({
+                            "name": asset["name"],
+                            "image_bytes": asset["image_bytes"],
+                            "description": asset["description"]
+                        })
+
                 # Optionally enhance prompt
                 final_prompt = prompt
+                additional_images = []
+
                 if use_ai_rewrite:
                     with st.status("Analyzing image and enhancing prompt..."):
-                        rewrite_result = rewrite_prompt(prompt, image_bytes)
+                        rewrite_result = rewrite_prompt(prompt, image_bytes, mentioned_assets)
                         st.session_state.image_description = rewrite_result["structured_output"]
                         st.session_state.final_prompt = rewrite_result["rewritten_prompt"]
+                        st.session_state.detected_style = rewrite_result.get("style_name", "Editorial")
                         final_prompt = rewrite_result["rewritten_prompt"]
+                        # Get additional images (excluding base)
+                        if len(rewrite_result.get('all_images', [])) > 1:
+                            additional_images = rewrite_result['all_images'][1:]
                         st.code(rewrite_result["structured_output"], language=None)
                 else:
                     st.session_state.image_description = None
                     st.session_state.final_prompt = None
+                    st.session_state.detected_style = None
+                    # Still pass additional images if not using rewrite
+                    additional_images = [a['image_bytes'] for a in mentioned_assets]
 
                 # Generate image
                 with st.status("Generating image..."):
@@ -147,20 +392,15 @@ if st.button("Generate", type="primary", disabled=not (uploaded_file and prompt)
                         image_bytes=image_bytes,
                         prompt=final_prompt,
                         aspect_ratio=aspect_ratio,
-                        image_size=image_size
+                        image_size=image_size,
+                        additional_images=additional_images
                     )
 
                 # Store result
                 st.session_state.generated_image = result_bytes
+                st.session_state.used_assets = list(st.session_state.attached_assets)  # Copy the list
                 if not use_ai_rewrite:
                     st.session_state.final_prompt = final_prompt
-
-                # Display result
-                result_placeholder.image(
-                    result_bytes,
-                    caption="Generated Image",
-                    use_container_width=True
-                )
 
                 st.success("Image generated successfully!")
 
@@ -168,25 +408,53 @@ if st.button("Generate", type="primary", disabled=not (uploaded_file and prompt)
                 st.error(f"Error: {str(e)}")
                 st.session_state.generated_image = None
 
-# Download button (only show if we have a generated image)
+# Result Section (below Generate button)
 if st.session_state.generated_image:
     st.divider()
+    st.markdown("**🖼️ Result**")
 
+    # Show detected style
+    if st.session_state.detected_style:
+        st.markdown(f"**🎨 Style:** `{st.session_state.detected_style}`")
+
+    # Show used assets
+    if st.session_state.used_assets:
+        st.caption(f"**Assets used:** {', '.join(st.session_state.used_assets)}")
+        # Show thumbnails of used assets
+        used_cols = st.columns(min(len(st.session_state.used_assets), 6))
+        for i, asset_name in enumerate(st.session_state.used_assets):
+            asset = get_asset(asset_name)
+            if asset:
+                with used_cols[i % 6]:
+                    thumb = get_asset_thumbnail(asset)
+                    if thumb:
+                        st.image(thumb, caption=asset_name, width=60)
+
+    # Small display thumbnail
+    st.image(
+        st.session_state.generated_image,
+        caption="Generated Image",
+        width=300
+    )
+    with st.expander("🔍 View Full Size"):
+        st.image(st.session_state.generated_image)  # Full resolution, no constraints
+
+# Download Section
+if st.session_state.generated_image:
     col_dl1, col_dl2 = st.columns([2, 1])
 
     with col_dl1:
-        # Download button
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         st.download_button(
-            label="Download Image",
+            label="💾 Download Image",
             data=st.session_state.generated_image,
             file_name=f"nova2_generated_{timestamp}.jpg",
-            mime="image/jpeg"
+            mime="image/jpeg",
+            use_container_width=True
         )
 
     with col_dl2:
-        # Save to server button
-        if st.button("Save to Server"):
+        if st.button("Save to Server", use_container_width=True):
             try:
                 output_path = save_image(st.session_state.generated_image)
                 st.success(f"Saved: {output_path}")
