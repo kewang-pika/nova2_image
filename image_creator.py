@@ -240,6 +240,164 @@ Output:"""
         }
 
 
+def generate_variation_prompts(structured_prompt: str, image_bytes: bytes) -> list:
+    """
+    Generate 4 diverse variation prompts based on the first generated image.
+
+    Args:
+        structured_prompt: The FULL structured prompt used for first generation:
+            - Subjects section (who/what is in the image)
+            - Editing prompt (what they're doing)
+            - Aesthetics/Style (the visual style applied)
+        image_bytes: The GENERATED first image (to see the actual result)
+
+    Returns:
+        List of 4 variation prompt strings
+    """
+    try:
+        print("[Variations] Generating 4 variation prompts...")
+
+        # Convert bytes to PIL Image
+        pil_image = Image.open(io.BytesIO(image_bytes))
+
+        variation_instruction = f"""Look at this generated image and the prompt that created it:
+
+{structured_prompt}
+
+Generate 4 diverse, creative variations of this scene. Keep the SAME:
+- Person/subject identity and appearance
+- Outfit/clothing
+- General environment/setting
+- Visual style and aesthetic
+
+Create DIFFERENT:
+- Camera angle (close-up, medium shot, full body, over-shoulder, etc.)
+- Pose or action (standing, sitting, walking, looking away, etc.)
+- Composition (centered, rule-of-thirds, negative space, etc.)
+- Moment (candid vs posed, movement vs still, etc.)
+
+Output ONLY 4 SHORT editing prompts (1-2 sentences each), one per line, numbered 1-4.
+Make them diverse and interesting - like an Instagram carousel.
+
+Examples:
+1. Close-up portrait, looking over shoulder with soft smile
+2. Full body shot walking away, looking back at camera
+3. Candid moment adjusting hair, eyes closed
+4. Wide shot with lots of negative space, subject small in frame
+
+Your 4 variations:"""
+
+        response = client.models.generate_content(
+            model=MODEL_REWRITE,
+            contents=[variation_instruction, pil_image]
+        )
+
+        result_text = response.text.strip()
+        print(f"[Variations] AI response:\n{result_text}")
+
+        # Parse the 4 prompts (expecting numbered list)
+        lines = result_text.split('\n')
+        prompts = []
+        for line in lines:
+            line = line.strip()
+            if line and len(line) > 3:
+                # Remove numbering like "1.", "1)", "1:"
+                if line[0].isdigit() and line[1] in '.):':
+                    line = line[2:].strip()
+                elif line[0].isdigit() and len(line) > 2 and line[1].isdigit() and line[2] in '.):':
+                    line = line[3:].strip()
+                if line:
+                    prompts.append(line)
+
+        # Ensure we have exactly 4 prompts
+        if len(prompts) < 4:
+            # Pad with defaults if needed
+            defaults = [
+                "Close-up portrait with natural expression",
+                "Full body shot from a slight distance",
+                "Candid moment, looking away from camera",
+                "Wide shot with more environment visible"
+            ]
+            while len(prompts) < 4:
+                prompts.append(defaults[len(prompts)])
+
+        prompts = prompts[:4]  # Take only first 4
+
+        print(f"[Variations] Parsed prompts: {prompts}")
+        return prompts
+
+    except Exception as e:
+        print(f"[Variations] Error generating prompts: {e}")
+        # Return default prompts on error
+        return [
+            "Close-up portrait with natural expression",
+            "Full body shot from a slight distance",
+            "Candid moment, looking away from camera",
+            "Wide shot with more environment visible"
+        ]
+
+
+def generate_variations(
+    original_selfie_bytes: bytes,
+    generated_image_bytes: bytes,
+    selfie_description: str,
+    variation_prompts: list,
+    aspect_ratio: str = "9:16",
+    image_size: str = "1K",
+    additional_assets: list = None
+) -> list:
+    """
+    Generate 4 variations IN PARALLEL using the same structured format.
+
+    Args:
+        original_selfie_bytes: Original "myself" image
+        generated_image_bytes: First generated image (style reference)
+        selfie_description: Description of myself from first generation
+        variation_prompts: List of 4 variation editing prompts
+        aspect_ratio: Output aspect ratio
+        image_size: Output resolution
+        additional_assets: Other assets (outfit, location, etc.)
+
+    Returns:
+        List of 4 generated image bytes
+    """
+    if additional_assets is None:
+        additional_assets = []
+
+    print(f"[Variations] Generating {len(variation_prompts)} variations in parallel...")
+
+    def generate_single(variation_prompt: str) -> bytes:
+        # Build structured prompt in same format as first generation
+        subjects = f"Subjects:\n1. I/myself: {selfie_description} (attached image 1)\n"
+        subjects += f"2. Style reference: The first generated image showing the desired visual style (attached image 2)\n"
+
+        # Add any other assets
+        for i, asset in enumerate(additional_assets, start=3):
+            subjects += f"{i}. {asset['name']}: {asset['description']} (attached image {i})\n"
+
+        full_prompt = f"{subjects}\nEditing prompt: {variation_prompt}\n\nAesthetics/Style: Match the visual style of attached image 2."
+
+        print(f"[Variations] Generating: {variation_prompt[:50]}...")
+
+        # Build additional_images list: [generated_image, ...other_assets]
+        all_additional = [generated_image_bytes] + [a['image_bytes'] for a in additional_assets]
+
+        return generate_image(
+            image_bytes=original_selfie_bytes,
+            prompt=full_prompt,
+            aspect_ratio=aspect_ratio,
+            image_size=image_size,
+            additional_images=all_additional
+        )
+
+    # Generate all 4 in parallel
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        results = list(executor.map(generate_single, variation_prompts))
+
+    print(f"[Variations] Generated {len(results)} variations")
+    return results
+
+
 def _rewrite_call(original_prompt: str, image_description: str, asset_names: list = None) -> str:
     """
     Internal helper: Rewrite the prompt based on image description.

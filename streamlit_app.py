@@ -14,6 +14,8 @@ from datetime import datetime
 from image_creator import (
     rewrite_prompt,
     generate_image,
+    generate_variation_prompts,
+    generate_variations,
     save_image,
     image_to_base64,
     parse_mentions,
@@ -90,6 +92,17 @@ if "detected_style" not in st.session_state:
     st.session_state.detected_style = None
 if "used_assets" not in st.session_state:
     st.session_state.used_assets = []
+# Variation generation state
+if "variations" not in st.session_state:
+    st.session_state.variations = []
+if "variation_prompts" not in st.session_state:
+    st.session_state.variation_prompts = []
+if "original_selfie_bytes" not in st.session_state:
+    st.session_state.original_selfie_bytes = None
+if "selfie_description" not in st.session_state:
+    st.session_state.selfie_description = None
+if "generation_assets" not in st.session_state:
+    st.session_state.generation_assets = []
 
 
 def attach_asset(asset_name):
@@ -402,6 +415,29 @@ if generate_clicked:
                 if not use_ai_rewrite:
                     st.session_state.final_prompt = final_prompt
 
+                # Store data needed for variations
+                st.session_state.original_selfie_bytes = image_bytes
+                st.session_state.generation_assets = mentioned_assets
+                # Extract selfie description from rewrite result
+                if use_ai_rewrite and rewrite_result.get("description"):
+                    # Parse first line: "1. I/myself: [description] (attached image 1)"
+                    desc_lines = rewrite_result["description"].split("\n")
+                    if desc_lines:
+                        first_line = desc_lines[0]
+                        # Remove "1. I/myself: " prefix and " (attached image 1)" suffix
+                        selfie_desc = first_line.replace("1. I/myself: ", "")
+                        if " (attached image" in selfie_desc:
+                            selfie_desc = selfie_desc.split(" (attached image")[0]
+                        st.session_state.selfie_description = selfie_desc
+                    else:
+                        st.session_state.selfie_description = None
+                else:
+                    st.session_state.selfie_description = None
+
+                # Clear previous variations when generating new first image
+                st.session_state.variations = []
+                st.session_state.variation_prompts = []
+
                 st.success("Image generated successfully!")
 
             except Exception as e:
@@ -460,6 +496,70 @@ if st.session_state.generated_image:
                 st.success(f"Saved: {output_path}")
             except Exception as e:
                 st.error(f"Save error: {e}")
+
+# Variations Section (only show after first image generated with AI enhance)
+if st.session_state.generated_image and st.session_state.image_description and st.session_state.selfie_description:
+    st.divider()
+
+    if st.button("🎲 Generate 4 Variations", use_container_width=True):
+        with st.spinner("Generating variations..."):
+            try:
+                # Step 1: Get variation prompts using structured prompt + generated image
+                with st.status("Creating variation ideas...") as status:
+                    var_prompts = generate_variation_prompts(
+                        structured_prompt=st.session_state.image_description,
+                        image_bytes=st.session_state.generated_image
+                    )
+                    for i, p in enumerate(var_prompts, 1):
+                        st.write(f"{i}. {p}")
+                    status.update(label="Variation ideas created!", state="complete")
+
+                # Step 2: Generate all 4 variations IN PARALLEL
+                with st.status("Generating 4 images in parallel...") as status:
+                    variations = generate_variations(
+                        original_selfie_bytes=st.session_state.original_selfie_bytes,
+                        generated_image_bytes=st.session_state.generated_image,
+                        selfie_description=st.session_state.selfie_description,
+                        variation_prompts=var_prompts,
+                        aspect_ratio=aspect_ratio,
+                        image_size=image_size,
+                        additional_assets=st.session_state.generation_assets
+                    )
+                    status.update(label="All 4 variations generated!", state="complete")
+
+                st.session_state.variations = variations
+                st.session_state.variation_prompts = var_prompts
+                st.success("Generated 4 variations!")
+
+            except Exception as e:
+                st.error(f"Error generating variations: {str(e)}")
+
+# Display variations in 2x2 grid
+if st.session_state.get("variations") and len(st.session_state.variations) > 0:
+    st.divider()
+    st.markdown("**🎲 Variations**")
+
+    # 2x2 grid
+    row1_cols = st.columns(2)
+    row2_cols = st.columns(2)
+    all_cols = row1_cols + row2_cols
+
+    for i, img_bytes in enumerate(st.session_state.variations):
+        if i < len(all_cols) and img_bytes:
+            prompt_text = st.session_state.variation_prompts[i] if i < len(st.session_state.variation_prompts) else f"Variation {i+1}"
+            with all_cols[i]:
+                st.image(img_bytes, caption=f"V{i+1}: {prompt_text[:40]}...", width=200)
+                with st.expander(f"🔍 V{i+1} Full Size"):
+                    st.image(img_bytes)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                st.download_button(
+                    f"💾 Download V{i+1}",
+                    data=img_bytes,
+                    file_name=f"nova2_variation_{i+1}_{timestamp}.jpg",
+                    mime="image/jpeg",
+                    key=f"dl_var_{i}",
+                    use_container_width=True
+                )
 
 # Footer
 st.divider()
