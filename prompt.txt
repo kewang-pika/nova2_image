@@ -1,0 +1,70 @@
+Preset styles 
+
+
+Notes for Ke Wang: Can we blind test the photos styles by adding thumb up and thumb down? 
+
+
+
+
+Suggested system prompt: 
+Analyze the input prompt, based on your understanding of the scenario or events described in prompt, choose one preset aesthetic prompt from below that best matches the user’s intention, add to the end of the user’s prompt to enhance the image. 
+Rules: 
+1. You can only choose ONE aesthetic prompt to add.
+2. You should NOT change the input prompt at all, only add to the end of it. 
+3. Editorial can be the default style, if you can’t decide on which preset to add, use the Editorial style.
+4. If you choose Instagram style, prioritize using Instagram v3. 
+5. If you choose fashion related prompts, prioritize on using Fashion Campaign v2. 
+
+
+
+
+Categories: 
+1. Daily Photos: (Day time, daily photos): 
+1. Instagram v1: The overall aesthetic is clean, modern, and editorial — blending naturalistic daylight with polished lifestyle photography. Crystal clear focus from foreground to background, no blur, no bokeh. Lighting is direct, diffused and even, no harsh contrast. great lighting. Exposure is bright yet balanced, add a little brilliance, preserving skin texture with a smooth, clean finish. The color palette favors neutrals, soft pastels, and subtle pops of saturated color, creating a calm, inviting mood with understated sophistication. 
+Textures appear crisp and tactile, rendered with clean iPhone 16 pro camera style that adds organic and realism. Natural poses, slightly off-center composition, well lit Instagram style photo. This style prioritizes quiet confidence, natural beauty, and relaxed authenticity. It blends editorial polish with approachable everyday moments, producing aesthetic, brilliant, Instagram-ready imagery that feels both cinematic and effortlessly real.
+
+Instagram v2: High-end social media lifestyle photography, viral influencer aesthetic, "It Girl/Boy" energy. The image quality is pristine and ultra-sharp with 8K definition. The composition is clean and curated, focusing perfectly on the subject. The subject exudes an attitude of 'effortless cool' and 'unbothered confidence'—a relaxed, slightly aloof expression with a direct, captivating gaze (siren eyes) or a candid 'too cool to care' look. Soft, premium lighting (natural or studio-like) highlights smooth, even skin and outfit textures. The outfit should be chic, instagram style young, and make sense to the scenario. The color palette is balanced, modern, and aesthetically pleasing. diffused editorial polish with high production quality photo, Canon G12 aesthetic, no clutter.background should also be crisp clear NO blur.
+
+Instagram v3: High-quality social media lifestyle photography with a contemporary influencer aesthetic and effortless chic vibe. Lighting is bright, soft, and evenly balanced, creating flattering, glowy skin tones without washing out details. The color palette is modern, clean, and natural—vibrant but realistic, with true-to-life tones across both subject and background. Shot in a high-end mirrorless camera style with a 35mm lens at f/4–f/5.6, producing a crisp, clear background with full environmental detail instead of artificial blur. The entire scene—foreground, midground, and background—remains sharp and well-defined, enhancing realism and avoiding the typical AI soft-focus look. Textures appear polished and photorealistic: clean lines, sharp edges, accurate lighting falloff, and natural grain.Overall the aesthetic is editorial yet approachable, featuring clear details, structured composition, and rich visual depth. High resolution, ultra-detailed, fully in-focus environment, high-fashion lifestyle energy.
+
+
+
+
+   2. Pastel: Soft lifestyle editorial aesthetic with bright natural daylight and a clean, high-key atmosphere. The lighting is diffused window light that creates smooth, even illumination across the scene, producing soft shadows, glossy skin highlights, and a gentle glow. Colors appear fresh and vibrant — pastel pinks, cool blues, natural browns, and crisp whites — giving the composition a playful yet polished visual tone. The overall look is bright, youthful, and airy, with low contrast, fine film-grain texture, and a subtly softened focus reminiscent of modern Instagram editorials. The framing is tight and intimate, emphasizing personal space and curated objects arranged artfully around the subject. The image style blends lifestyle candidness with aesthetic intentionality, combining cozy textures, clean light, and a dreamy, contemporary color palette.
+
+
+   3. Editorial: The overall style is photorealistic, natural, editorial, soft, and high-fashion, reflecting an elevated aesthetic. The photography features medium contrast with defined but soft shadows, ensuring a balanced look. The image is well-exposed and slightly bright, not overexposed or washed out. Colors are saturated, natural tones in the environment, ensuring it is not too warm-toned. The overall texture of the image is characterized by slight film grain, natural, defined, soft, elevated. Lighting is natural and even, originating from the front and slightly overhead, illuminating both the subject and the detailed background with soft lighting and soft shadows, resulting in a slightly glowy lighting effect, natural lighting. If a sky is present in a daytime scenario, it is light blue-toned. The overall tone is balanced, and the image is moderately contrasty with vibrant, saturated colors, not muted. The overall image is soft and balanced, shadows are soft.
+
+
+   4. Cool Cinematic: The overall style is photorealistic, editorial, and high-fashion, exhibiting a naturalistic photography style with medium contrast and defined but soft shadows, and balanced exposure. The image features a cool palette with slightly muted tones. The texture is characterized by film grain, hazy, soft, polished, smooth, analog texture, and a subtle glow. The lighting is soft, diffuse natural daylight coming from above, casting soft shadows, illuminating the person clearly. Natural lighting, soft shadows, soft lighting, glowy lighting, and flat lighting, emphasizing a muted yet medium contrast appearance.
+
+
+   5. Fashion, Campaign v1:  High-fashion editorial aesthetic with a clean, sculptural composition and a strong sense of spatial minimalism. Photography emphasizes precise framing, often using centered or near-centered subject placement, symmetrical blocking, and intentional negative space. The overall visual design favors bold, graphic silhouettes against uncluttered backgrounds, allowing shapes, textures, and posture to become the main storytelling elements. Lighting is soft but directional, producing smooth gradients and gentle shadow falloff that contours the figure without harsh contrast. The palette leans toward sun-kissed warmth, muted pastels, creamy neutrals, or soft Mediterranean tones, depending on the scene. Surfaces appear matte and tactile, with natural grain or subtle analog softness, maintaining a luxurious but organic finish. The camera style resembles medium-format fashion photography — crisp edges, gentle depth of field, and a polished yet unretouched feel. Textures such as fabric sheens, skin glow, flowers, or architectural materials are highlighted with clarity. Colors remain balanced and serene, avoiding saturation spikes, creating a timeless, editorial calm. Posing is structured yet nonchalant: relaxed limbs, elongated lines, a sense of ease or quiet confidence. Often paired with unexpected props, playful scale, or surreal minimal staging that adds personality without clutter. Overall, the aesthetic merges minimalist composition, warm natural light, sculptural posing, and subtle surrealism, echoing the refined visual language of Jacquemus campaigns — elegant, airy, modern, and art-directed with precision. The background should also be in focus.
+
+
+   6. Fashion, Campaign v2: High-fashion minimalist campaign aesthetic with clean, spacious composition and strong geometric blocking. The lighting is bright, soft, and evenly diffused—natural daylight or high-key studio light that eliminates harsh shadows and makes colors appear crisp and luminous. The palette favors warm neutrals, sun-kissed skin tones, creamy whites, muted pastels, and the occasional vivid statement accent color such as red, blue, yellow, or green. Textures appear tactile and premium: matte fabrics, smooth skin highlights, soft knits, polished surfaces. The camera style is straightforward and editorial, using centered framing, symmetrical balance, and generous negative space. Subjects are often placed against simple backdrops—open landscapes, blank walls, textured architectural surfaces—emphasizing silhouette and shape. Full-body shots use a fashion-catalogue perspective with slight distance; close-ups maintain clarity and sculpted lighting. Shadows are minimal and clean, enhancing the refined, modern aesthetic. The mood is calm, confident, and subtly playful, featuring relaxed yet assertive poses: upright posture, slight lean, gentle extension of limbs, or quiet stillness. The overall tone is elegant and uncluttered, blending luxury minimalism with a whimsical touch. The aesthetic should evoke the visual identity of Jacquemus campaigns—fresh, airy, understatedly chic, and compositionally meticulous. Do NOT add text ‘Jacquemus’
+
+
+
+
+II. Night, Retro 
+   1. Trigger word: CCD, retro digital camera, hard flash, night life, 2000s, harsh direct camera, nostalgic flash photo, night club, at night, etc. 
+Prompt: Early 2000s vintage digital camera aesthetic, CCD sensor color science. Shot on a Canon PowerShot or Nikon Coolpix compact point-and-shoot. Harsh direct on-camera flash creating a spotlight effect on the subject with hard shadows. The skin texture appears smooth yet raw with a signature glowing "flash burnout" look. slightly low-fidelity, authentic high-ISO digital noise, chromatic aberration, vibrant and saturated colors, lo-fi candid snapshot, tumblr girl aesthetic, chaotic energy, unpolished but fashionable.
+
+
+
+
+III. Impressive Nature/ Outdoor
+      1. Trigger word: Extreme long shot nature photo, nature scene, landscape. 
+Prompt: The overall style is photorealistic, natural, editorial, soft, and elevated, with a warm golden-hour atmosphere that enhances the outdoor travel aesthetic. Poses are playful, relaxed, and natural — whether sitting, standing, walking, or even lightly jumping — always captured from a far-away, wide shot so the figure remains small within the vast landscape. The vibe is carefree, joyful, and adventurous, blending soft editorial refinement with spontaneous outdoor energy. Lighting is cinematic outdoor natural light, casting gentle highlights and long, soft shadows while creating a glowing, cinematic ambience. Reds, oranges, and yellows are slightly more saturated to enrich the warmth of the environment while keeping skin tones natural and balanced. Camera angles are primarily eye-level or slightly low, emphasizing expansive mountain ranges, forests, and open skies. The photography features medium contrast with soft shadows and a bright but controlled exposure. A subtle layer of film grain adds an elevated, organic texture. The overall tone is vivid, warm, and immersive, maintaining a soft editorial feel while showcasing broad, scenic outdoor landscapes.
+
+
+
+
+IV. Other cases (templates): 
+         1. Trigger word: Celebrity, Paparazzi, Celebrity spotting, star, idol related. 
+Prompt: Analog film photograph, shot on Leica M6 with Kodak Portra 400. A chaotic, high-energy candid moment.Harsh direct on-camera flash, blinding strobe lights from surrounding cameras, deep shadows, heavy film grain, motion blur, raw and authentic Magnum agency aesthetic, celebrity spotting atmosphere.
+         2. Trigger word: Sexy mirror selfie: Convert the subject into a front, a profile or back angle of confident mirror-style selfie of the subject arranging their wet hair with bold lighting and modern contrast. 
+If female: Pose naturally while holding the phone in a bathroom or modern interior. Outfit can be a string bikini, or a set of hot sportswear, or hot crop outfit that highlights an impressive sexy body curve and proportion. hair is a little bit wet or as specified.
+If male: Shirtless or wearing an open casual top or gym attire, in similar lighting and mirror composition. Keep reflections realistic and posture natural.
+Lighting should emphasize body definition — strong definition with a subtle film grain. The final look should feel empowered, bold, and glossy — a high-contrast social media photo that captures confidence without overediting. a bit more hot and curvy. hair is wet, Hugo Comte photography style, high definition photo, strong grainy
