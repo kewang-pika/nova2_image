@@ -5,6 +5,7 @@ Standalone image editing module using Gemini gemini-3-pro-image-preview
 
 import os
 import io
+import json
 from datetime import datetime
 from PIL import Image
 from google import genai
@@ -18,6 +19,7 @@ from agents import (
     VariationsAgent,
     STYLE_PRESETS,
     STYLE_CATEGORIES,
+    DEFAULT_STYLE_SYSTEM_PROMPT,
     image_to_base64,
     base64_to_image,
 )
@@ -37,10 +39,70 @@ client = genai.Client(api_key=API_KEY)
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "generated_images")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+# ============== CONFIG FILE ==============
+CONFIG_FILE = os.path.join(os.path.dirname(__file__), "agent_config.json")
+
+
+def load_agent_config() -> dict:
+    """Load agent configuration from JSON file."""
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"[Config] Error loading config: {e}")
+    return {}
+
+
+def save_agent_config(config: dict):
+    """Save agent configuration to JSON file."""
+    try:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=2)
+        print(f"[Config] Saved to {CONFIG_FILE}")
+    except Exception as e:
+        print(f"[Config] Error saving config: {e}")
+
+
 # ============== AGENTS ==============
-style_agent = StyleAgent()
+# Load saved config
+_config = load_agent_config()
+_saved_style_prompt = _config.get("style_agent_system_prompt")
+
+# Initialize agents with saved config
+style_agent = StyleAgent(system_prompt=_saved_style_prompt)
 prompt_agent = PromptAgent(style_agent=style_agent)
 variations_agent = VariationsAgent()
+
+
+# ============== SYSTEM PROMPT MANAGEMENT ==============
+def get_style_system_prompt() -> str:
+    """Get the current StyleAgent system prompt."""
+    return style_agent.get_system_prompt()
+
+
+def set_style_system_prompt(prompt: str):
+    """Set the StyleAgent system prompt (in memory only)."""
+    style_agent.set_system_prompt(prompt)
+
+
+def save_style_system_prompt(prompt: str):
+    """Save the StyleAgent system prompt to config file and apply it."""
+    style_agent.set_system_prompt(prompt)
+    config = load_agent_config()
+    config["style_agent_system_prompt"] = prompt
+    save_agent_config(config)
+    return True
+
+
+def reset_style_system_prompt():
+    """Reset StyleAgent system prompt to default."""
+    style_agent.set_system_prompt(DEFAULT_STYLE_SYSTEM_PROMPT)
+    config = load_agent_config()
+    if "style_agent_system_prompt" in config:
+        del config["style_agent_system_prompt"]
+    save_agent_config(config)
+    return DEFAULT_STYLE_SYSTEM_PROMPT
 
 
 # ============== CORE GENERATION ==============
@@ -198,9 +260,17 @@ def detect_style(prompt: str) -> dict:
     return style_agent.detect(prompt)
 
 
-def rewrite_prompt(original_prompt: str, image_bytes: bytes, mentioned_assets: list = None) -> dict:
-    """Rewrite and enhance prompt. Wrapper for PromptAgent.rewrite()."""
-    return prompt_agent.rewrite(original_prompt, image_bytes, mentioned_assets)
+def rewrite_prompt(original_prompt: str, image_bytes: bytes, mentioned_assets: list = None, aesthetic: dict = None) -> dict:
+    """Rewrite and enhance prompt. Wrapper for PromptAgent.rewrite().
+
+    Args:
+        original_prompt: User's original prompt
+        image_bytes: Base image bytes
+        mentioned_assets: List of asset dicts
+        aesthetic: Optional dict with visual_style and avoids keys
+            Example: {"visual_style": "35mm film grain", "avoids": ["neon", "cartoon"]}
+    """
+    return prompt_agent.rewrite(original_prompt, image_bytes, mentioned_assets, aesthetic)
 
 
 def generate_variation_prompts(structured_prompt: str, image_bytes: bytes) -> list:

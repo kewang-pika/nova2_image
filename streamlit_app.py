@@ -19,6 +19,10 @@ from image_creator import (
     save_image,
     image_to_base64,
     parse_mentions,
+    get_style_system_prompt,
+    save_style_system_prompt,
+    reset_style_system_prompt,
+    DEFAULT_STYLE_SYSTEM_PROMPT,
     MODEL_IMAGE,
     OUTPUT_DIR,
 )
@@ -32,6 +36,17 @@ from closet import (
     list_all_asset_names,
     CATEGORIES,
     init_closet,
+)
+
+from history import (
+    save_generation,
+    update_generation_variations,
+    get_generation,
+    list_generations,
+    delete_generation,
+    verify_password,
+    get_history_stats,
+    HISTORY_PASSWORD,
 )
 
 # Initialize closet
@@ -105,6 +120,15 @@ if "selfie_description" not in st.session_state:
     st.session_state.selfie_description = None
 if "generation_assets" not in st.session_state:
     st.session_state.generation_assets = []
+# History state
+if "current_gen_id" not in st.session_state:
+    st.session_state.current_gen_id = None
+if "history_authenticated" not in st.session_state:
+    st.session_state.history_authenticated = False
+if "show_history" not in st.session_state:
+    st.session_state.show_history = False
+if "selected_history_item" not in st.session_state:
+    st.session_state.selected_history_item = None
 
 
 def attach_asset(asset_name):
@@ -149,6 +173,103 @@ with st.sidebar:
         value=True,
         help="Use AI to analyze image and improve your prompt"
     )
+
+    st.divider()
+
+    # Aesthetic Preferences Section
+    with st.expander("🎨 Aesthetic Preferences (JSON)", expanded=False):
+        st.caption("Paste JSON to influence style detection. Leave empty to use auto-detection.")
+
+        # Example JSON
+        example_json = '''{
+  "aesthetic": {
+    "visual_style": "Soft editorial, 35mm film grain, muted colors, natural light, minimalist",
+    "avoids": ["neon", "high contrast", "heavy makeup", "3d render", "cartoon"]
+  }
+}'''
+
+        # Initialize session state
+        if "aesthetic_json" not in st.session_state:
+            st.session_state.aesthetic_json = ""
+
+        aesthetic_input = st.text_area(
+            "Aesthetic JSON",
+            value=st.session_state.aesthetic_json,
+            height=150,
+            key="aesthetic_json_input",
+            placeholder=example_json,
+            label_visibility="collapsed"
+        )
+
+        # Update session state
+        st.session_state.aesthetic_json = aesthetic_input
+
+        # Parse and validate
+        aesthetic_dict = None
+        if aesthetic_input.strip():
+            try:
+                import json
+                parsed = json.loads(aesthetic_input)
+                if "aesthetic" in parsed:
+                    aesthetic_dict = parsed["aesthetic"]
+                    st.success(f"✓ Valid: {aesthetic_dict.get('visual_style', '')[:40]}...")
+                else:
+                    st.warning("JSON should have 'aesthetic' key")
+            except json.JSONDecodeError as e:
+                st.error(f"Invalid JSON: {e}")
+
+        st.caption("**Example:**")
+        st.code(example_json, language="json")
+
+    st.divider()
+
+    # StyleAgent System Prompt Editor
+    with st.expander("⚙️ Style Detection Prompt", expanded=False):
+        st.caption("Edit the system prompt used by StyleAgent to detect image styles.")
+
+        # Initialize session state for the text area
+        if "style_prompt_editor" not in st.session_state:
+            st.session_state.style_prompt_editor = get_style_system_prompt()
+
+        # Check if current prompt differs from default
+        current_prompt = get_style_system_prompt()
+        is_custom = current_prompt != DEFAULT_STYLE_SYSTEM_PROMPT
+
+        if is_custom:
+            st.info("📝 Using custom system prompt")
+
+        # Text area for editing
+        edited_prompt = st.text_area(
+            "System Prompt",
+            value=st.session_state.style_prompt_editor,
+            height=300,
+            key="style_prompt_text",
+            help="Use {prompt} as placeholder for the user's editing prompt",
+            label_visibility="collapsed"
+        )
+
+        # Update session state when text changes
+        st.session_state.style_prompt_editor = edited_prompt
+
+        # Buttons row
+        col_save, col_reset = st.columns(2)
+
+        with col_save:
+            if st.button("💾 Save", key="save_style_prompt", use_container_width=True):
+                if "{prompt}" not in edited_prompt:
+                    st.error("Prompt must contain {prompt} placeholder")
+                else:
+                    save_style_system_prompt(edited_prompt)
+                    st.success("Saved!")
+
+        with col_reset:
+            if st.button("🔄 Reset", key="reset_style_prompt", use_container_width=True):
+                reset_style_system_prompt()
+                st.session_state.style_prompt_editor = DEFAULT_STYLE_SYSTEM_PROMPT
+                st.success("Reset to default!")
+                st.rerun()
+
+        st.caption("💡 Tip: The prompt must include `{prompt}` placeholder where the user's editing prompt will be inserted.")
 
     st.divider()
 
@@ -383,9 +504,20 @@ if generate_clicked:
                 final_prompt = prompt
                 additional_images = []
 
+                # Parse aesthetic JSON if provided
+                aesthetic_prefs = None
+                if st.session_state.aesthetic_json.strip():
+                    try:
+                        import json
+                        parsed = json.loads(st.session_state.aesthetic_json)
+                        if "aesthetic" in parsed:
+                            aesthetic_prefs = parsed["aesthetic"]
+                    except:
+                        pass  # Ignore invalid JSON
+
                 if use_ai_rewrite:
                     with st.status("Analyzing image and enhancing prompt..."):
-                        rewrite_result = rewrite_prompt(prompt, image_bytes, mentioned_assets)
+                        rewrite_result = rewrite_prompt(prompt, image_bytes, mentioned_assets, aesthetic_prefs)
                         st.session_state.image_description = rewrite_result["structured_output"]
                         st.session_state.final_prompt = rewrite_result["rewritten_prompt"]
                         st.session_state.detected_style = rewrite_result.get("style_name", "Editorial")
@@ -440,6 +572,19 @@ if generate_clicked:
                 st.session_state.variations = []
                 st.session_state.variation_prompts = []
                 st.session_state.variation_full_prompts = []
+
+                # Save to history
+                gen_id = save_generation(
+                    original_prompt=prompt,
+                    editing_prompt=st.session_state.final_prompt or prompt,
+                    structured_prompt=st.session_state.image_description or prompt,
+                    style_name=st.session_state.detected_style or "None",
+                    main_image_bytes=result_bytes,
+                    aspect_ratio=aspect_ratio,
+                    image_size=image_size,
+                    aesthetic=aesthetic_prefs
+                )
+                st.session_state.current_gen_id = gen_id
 
                 st.success("Image generated successfully!")
 
@@ -534,6 +679,16 @@ if st.session_state.generated_image and st.session_state.image_description and s
                 st.session_state.variations = result["images"]
                 st.session_state.variation_prompts = var_prompts
                 st.session_state.variation_full_prompts = result["full_prompts"]
+
+                # Update history with variations
+                if st.session_state.current_gen_id:
+                    update_generation_variations(
+                        gen_id=st.session_state.current_gen_id,
+                        variation_images=result["images"],
+                        variation_prompts=var_prompts,
+                        variation_full_prompts=result["full_prompts"]
+                    )
+
                 st.success("Generated 4 variations!")
 
             except Exception as e:
@@ -568,6 +723,139 @@ if st.session_state.get("variations") and len(st.session_state.variations) > 0:
                     key=f"dl_var_{i}",
                     use_container_width=True
                 )
+
+# ===== HISTORY GALLERY =====
+st.divider()
+st.markdown("### 📚 Generation History")
+
+# History stats
+stats = get_history_stats()
+st.caption(f"Total: {stats['total']} generations | {stats['with_variations']} with variations")
+
+# Password protection
+if not st.session_state.history_authenticated:
+    col_pwd, col_btn = st.columns([3, 1])
+    with col_pwd:
+        password_input = st.text_input(
+            "Enter password to view history",
+            type="password",
+            key="history_password",
+            placeholder="Password required"
+        )
+    with col_btn:
+        if st.button("🔓 Unlock", key="unlock_history"):
+            if verify_password(password_input):
+                st.session_state.history_authenticated = True
+                st.rerun()
+            else:
+                st.error("Incorrect password")
+else:
+    # Show history gallery
+    if st.button("🔒 Lock History", key="lock_history"):
+        st.session_state.history_authenticated = False
+        st.session_state.selected_history_item = None
+        st.rerun()
+
+    # Load history items
+    history_items = list_generations(limit=30)
+
+    if not history_items:
+        st.info("No generations in history yet. Generate some images to see them here!")
+    else:
+        # View mode: Grid or Detail
+        if st.session_state.selected_history_item:
+            # Detail view
+            item = get_generation(st.session_state.selected_history_item)
+            if item:
+                if st.button("← Back to Gallery", key="back_to_gallery"):
+                    st.session_state.selected_history_item = None
+                    st.rerun()
+
+                st.markdown(f"**Generation:** `{item['id']}`")
+                st.caption(f"Created: {item['timestamp'][:19].replace('T', ' ')}")
+
+                # Main image and info
+                col_img, col_info = st.columns([1, 1])
+
+                with col_img:
+                    st.markdown("**🖼️ Main Image**")
+                    st.image(item["main_image_bytes"], use_container_width=True)
+
+                with col_info:
+                    st.markdown(f"**🎨 Style:** `{item.get('style_name', 'N/A')}`")
+                    st.markdown(f"**📐 Aspect:** `{item.get('aspect_ratio', 'N/A')}` | **Size:** `{item.get('image_size', 'N/A')}`")
+
+                    st.markdown("**💬 Original Prompt:**")
+                    st.code(item.get("original_prompt", "N/A"), language=None)
+
+                # Structured prompt
+                with st.expander("📝 Full Structured Prompt", expanded=False):
+                    st.code(item.get("structured_prompt", "N/A"), language=None)
+
+                # Aesthetic preferences (if used)
+                if item.get("aesthetic"):
+                    with st.expander("🎨 Aesthetic Preferences", expanded=False):
+                        import json
+                        st.json(item.get("aesthetic"))
+
+                # Variations
+                if item.get("variation_image_bytes"):
+                    st.markdown("**🎲 Variations**")
+
+                    var_cols = st.columns(4)
+                    for i, var_bytes in enumerate(item["variation_image_bytes"]):
+                        with var_cols[i % 4]:
+                            st.image(var_bytes, caption=f"V{i+1}", use_container_width=True)
+
+                            # Show variation prompt
+                            var_prompt = item.get("variation_prompts", [])[i] if i < len(item.get("variation_prompts", [])) else ""
+                            if var_prompt:
+                                st.caption(f"_{var_prompt[:60]}..._" if len(var_prompt) > 60 else f"_{var_prompt}_")
+
+                    # Full variation prompts
+                    with st.expander("📝 Variation Full Prompts", expanded=False):
+                        for i, fp in enumerate(item.get("variation_full_prompts", [])):
+                            st.markdown(f"**V{i+1}:**")
+                            st.code(fp, language=None)
+
+                # Delete button
+                st.divider()
+                if st.button("🗑️ Delete This Generation", key="delete_gen", type="secondary"):
+                    delete_generation(item["id"])
+                    st.session_state.selected_history_item = None
+                    st.success("Deleted!")
+                    st.rerun()
+
+            else:
+                st.error("Generation not found")
+                st.session_state.selected_history_item = None
+
+        else:
+            # Grid view
+            st.markdown("**Click on an image to view details**")
+
+            # Display in 4-column grid
+            cols_per_row = 4
+            for row_start in range(0, len(history_items), cols_per_row):
+                cols = st.columns(cols_per_row)
+                for i, col in enumerate(cols):
+                    idx = row_start + i
+                    if idx < len(history_items):
+                        item = history_items[idx]
+                        with col:
+                            # Thumbnail
+                            if item.get("main_image_bytes"):
+                                st.image(item["main_image_bytes"], use_container_width=True)
+
+                            # Info
+                            timestamp_short = item["timestamp"][:10]
+                            has_vars = "🎲" if item.get("variations") else ""
+                            st.caption(f"{timestamp_short} {has_vars}")
+                            st.caption(f"_{item.get('original_prompt', '')[:30]}..._" if len(item.get('original_prompt', '')) > 30 else f"_{item.get('original_prompt', '')}_")
+
+                            if st.button("View", key=f"view_{item['id']}", use_container_width=True):
+                                st.session_state.selected_history_item = item["id"]
+                                st.rerun()
 
 # Footer
 st.divider()

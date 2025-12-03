@@ -19,3 +19,5 @@ closet/
 # OS
 .DS_Store
 Thumbs.db
+history/
+agent_config.json

@@ -66,27 +66,9 @@ STYLE_CATEGORIES = {
 # ============================================
 # AGENT 1: StyleAgent - Detect/determine style
 # ============================================
-class StyleAgent:
-    """Agent for detecting and selecting style presets."""
 
-    def __init__(self):
-        self.client = client
-        self.model = MODEL_REWRITE
-        self.presets = STYLE_PRESETS
-        self.categories = STYLE_CATEGORIES
-
-    def detect(self, prompt: str) -> dict:
-        """
-        Analyze prompt and select the best matching style preset.
-        Uses AI to understand the prompt context and select appropriate style.
-
-        Returns:
-            dict with style_name, style_key, style_prompt
-        """
-        try:
-            print("[StyleAgent] Detecting style from prompt...")
-
-            style_instruction = f"""Analyze this image editing prompt and determine the best aesthetic style category:
+# Default system prompt for StyleAgent
+DEFAULT_STYLE_SYSTEM_PROMPT = """Analyze this image editing prompt and determine the best aesthetic style category:
 
 Prompt: "{prompt}"
 
@@ -112,6 +94,40 @@ Output format:
 {{"category": "category_name", "custom_aesthetic": "extracted aesthetic if custom, otherwise null"}}
 
 Output:"""
+
+
+class StyleAgent:
+    """Agent for detecting and selecting style presets."""
+
+    def __init__(self, system_prompt: str = None):
+        self.client = client
+        self.model = MODEL_REWRITE
+        self.presets = STYLE_PRESETS
+        self.categories = STYLE_CATEGORIES
+        self.system_prompt = system_prompt or DEFAULT_STYLE_SYSTEM_PROMPT
+
+    def set_system_prompt(self, prompt: str):
+        """Update the system prompt used for style detection."""
+        self.system_prompt = prompt
+        print(f"[StyleAgent] System prompt updated ({len(prompt)} chars)")
+
+    def get_system_prompt(self) -> str:
+        """Get the current system prompt."""
+        return self.system_prompt
+
+    def detect(self, prompt: str) -> dict:
+        """
+        Analyze prompt and select the best matching style preset.
+        Uses AI to understand the prompt context and select appropriate style.
+
+        Returns:
+            dict with style_name, style_key, style_prompt
+        """
+        try:
+            print("[StyleAgent] Detecting style from prompt...")
+
+            # Use the configurable system prompt with {prompt} placeholder
+            style_instruction = self.system_prompt.format(prompt=prompt)
 
             response = self.client.models.generate_content(
                 model=self.model,
@@ -186,6 +202,149 @@ Output:"""
                 "style_key": "editorial",
                 "style_prompt": self.presets["editorial"]
             }
+
+    def detect_with_aesthetic(self, prompt: str, aesthetic: dict = None) -> dict:
+        """
+        Detect style using optional aesthetic preferences.
+
+        Args:
+            prompt: User's editing prompt
+            aesthetic: Optional dict with 'visual_style' and 'avoids' keys
+                Example: {
+                    "visual_style": "Soft editorial, 35mm film grain, muted colors",
+                    "avoids": ["neon", "high contrast", "cartoon"]
+                }
+
+        Returns:
+            dict with style_name, style_key, style_prompt
+        """
+        # If no aesthetic provided, use regular detection
+        if not aesthetic or not aesthetic.get("visual_style"):
+            return self.detect(prompt)
+
+        visual_style = aesthetic.get("visual_style", "")
+        avoids = aesthetic.get("avoids", [])
+
+        print(f"[StyleAgent] Using aesthetic preferences:")
+        print(f"[StyleAgent]   Visual style: {visual_style}")
+        print(f"[StyleAgent]   Avoids: {avoids}")
+
+        try:
+            # Build aesthetic-aware instruction
+            avoids_str = ", ".join(avoids) if avoids else "none specified"
+
+            aesthetic_instruction = f"""Given the user's aesthetic preferences, select the best matching style OR create a custom one.
+
+User's editing prompt: "{prompt}"
+
+User's aesthetic preferences:
+- Visual style: {visual_style}
+- Avoids: {avoids_str}
+
+Available preset categories:
+1. instagram - Daily lifestyle, social media, influencer content
+2. pastel - Soft, dreamy, pastel colors, gentle and airy
+3. fuji_sunglow - Fujifilm-inspired, sun glow, luminous skin, film grain, nostalgic
+4. editorial - Professional photography, natural, soft shadows
+5. cool_cinematic - Cinematic, cool tones, muted colors, film-like
+6. fashion - Fashion campaign, high-fashion, runway, model shoots
+7. ccd_flash - Night photos, club/party, retro 2000s flash
+8. landscape - Nature, outdoor, travel, mountains, scenic
+9. celebrity - Paparazzi style, celebrity spotting
+10. mirror_selfie - Mirror selfies, confident/sexy poses
+
+Instructions:
+1. If the user's visual_style closely matches a preset, use that preset
+2. If it doesn't match well, return "custom" with a detailed style prompt
+3. The custom style prompt should incorporate the visual_style AND explicitly avoid the items in 'avoids'
+
+Return JSON:
+{{"category": "preset_name OR custom", "custom_style_prompt": "detailed style prompt if custom, otherwise null"}}
+
+Output:"""
+
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=[aesthetic_instruction]
+            )
+
+            result_text = response.text.strip()
+            print(f"[StyleAgent] AI response: {result_text}")
+
+            # Handle markdown code blocks
+            if "```" in result_text:
+                result_text = result_text.split("```")[1]
+                if result_text.startswith("json"):
+                    result_text = result_text[4:]
+                result_text = result_text.strip()
+
+            result = json.loads(result_text)
+            category = result.get("category", "editorial")
+            custom_style_prompt = result.get("custom_style_prompt")
+
+            # Handle custom aesthetic - create new style prompt
+            if category == "custom" and custom_style_prompt:
+                # Append avoids explicitly
+                if avoids:
+                    avoids_clause = f" AVOID: {', '.join(avoids)}. Do NOT include these elements."
+                    custom_style_prompt = custom_style_prompt.rstrip('.') + '.' + avoids_clause
+
+                print(f"[StyleAgent] Created custom style from aesthetic")
+                return {
+                    "style_name": f"Custom Aesthetic",
+                    "style_key": "custom_aesthetic",
+                    "style_prompt": custom_style_prompt
+                }
+
+            # Use matched preset but check avoids
+            style_key = category
+            style_prompt = self.presets.get(style_key, self.presets["editorial"])
+
+            # Append avoids to existing preset
+            if avoids:
+                avoids_clause = f" AVOID: {', '.join(avoids)}. Do NOT include these elements."
+                style_prompt = style_prompt.rstrip('.') + '.' + avoids_clause
+
+            # Map to display names
+            style_names = {
+                "instagram": "Instagram V3",
+                "instagram_v3": "Instagram V3",
+                "pastel": "Pastel",
+                "fuji_sunglow": "Fuji Film Sun Glow",
+                "editorial": "Editorial",
+                "cool_cinematic": "Cool Cinematic",
+                "fashion": "Fashion Campaign V2",
+                "fashion_v2": "Fashion Campaign V2",
+                "ccd_flash": "CCD Flash (Night/Retro)",
+                "landscape": "Nature/Landscape",
+                "celebrity": "Celebrity/Paparazzi",
+                "mirror_selfie": "Mirror Selfie"
+            }
+
+            # Handle category mapping
+            if category == "instagram":
+                style_key = "instagram_v3"
+            elif category == "fashion":
+                style_key = "fashion_v2"
+
+            style_name = style_names.get(style_key, category.title())
+            style_prompt = self.presets.get(style_key, self.presets["editorial"])
+
+            # Append avoids
+            if avoids:
+                avoids_clause = f" AVOID: {', '.join(avoids)}. Do NOT include these elements."
+                style_prompt = style_prompt.rstrip('.') + '.' + avoids_clause
+
+            print(f"[StyleAgent] Selected with aesthetic: {style_name}")
+            return {
+                "style_name": f"{style_name} (Aesthetic)",
+                "style_key": style_key,
+                "style_prompt": style_prompt
+            }
+
+        except Exception as e:
+            print(f"[StyleAgent] Error with aesthetic: {e}, falling back to regular detection")
+            return self.detect(prompt)
 
     def get_preset(self, style_key: str) -> str:
         """Get style preset text by key."""
@@ -297,10 +456,17 @@ Rewritten prompt (just the action, nothing else):"""
 
         return rewritten
 
-    def rewrite(self, original_prompt: str, image_bytes: bytes, mentioned_assets: list = None) -> dict:
+    def rewrite(self, original_prompt: str, image_bytes: bytes, mentioned_assets: list = None, aesthetic: dict = None) -> dict:
         """
         Full prompt enhancement pipeline.
         Runs style detection in parallel with prompt rewriting.
+
+        Args:
+            original_prompt: User's original prompt
+            image_bytes: Base image bytes
+            mentioned_assets: List of asset dicts with name, description, image_bytes
+            aesthetic: Optional dict with visual_style and avoids keys
+                Example: {"visual_style": "35mm film grain", "avoids": ["neon", "cartoon"]}
 
         Returns:
             dict with original_prompt, description, rewritten_prompt,
@@ -336,7 +502,11 @@ Rewritten prompt (just the action, nothing else):"""
             print("[PromptAgent] Running rewrite + style detection in parallel...")
             with ThreadPoolExecutor(max_workers=2) as executor:
                 rewrite_future = executor.submit(self._rewrite_call, clean_prompt, image_description, asset_names)
-                style_future = executor.submit(self.style_agent.detect, original_prompt)
+                # Use aesthetic-aware detection if aesthetic provided
+                if aesthetic and aesthetic.get("visual_style"):
+                    style_future = executor.submit(self.style_agent.detect_with_aesthetic, original_prompt, aesthetic)
+                else:
+                    style_future = executor.submit(self.style_agent.detect, original_prompt)
 
                 rewritten = rewrite_future.result()
                 style_result = style_future.result()
