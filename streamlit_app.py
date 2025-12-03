@@ -751,17 +751,39 @@ if not st.session_state.history_authenticated:
                 st.error("Incorrect password")
 else:
     # Show history gallery
-    if st.button("🔒 Lock History", key="lock_history"):
-        st.session_state.history_authenticated = False
-        st.session_state.selected_history_item = None
-        st.rerun()
+    col_lock, col_show_all = st.columns([1, 1])
+    with col_lock:
+        if st.button("🔒 Lock History", key="lock_history"):
+            st.session_state.history_authenticated = False
+            st.session_state.selected_history_item = None
+            st.rerun()
 
-    # Load history items
-    history_items = list_generations(limit=30)
+    # Initialize show_all state
+    if "show_all_history" not in st.session_state:
+        st.session_state.show_all_history = False
+
+    with col_show_all:
+        st.session_state.show_all_history = st.checkbox(
+            "Show All",
+            value=st.session_state.show_all_history,
+            key="show_all_checkbox"
+        )
+
+    # Load history items - show all or limited
+    history_limit = 999 if st.session_state.show_all_history else 30
+    history_items = list_generations(limit=history_limit)
 
     if not history_items:
         st.info("No generations in history yet. Generate some images to see them here!")
     else:
+        # Show count info
+        showing_count = len(history_items)
+        total_count = stats['total']
+        if showing_count < total_count:
+            st.caption(f"📋 Showing {showing_count} of {total_count} (check 'Show All' to see more)")
+        else:
+            st.caption(f"📋 Showing all {total_count} generations")
+
         # View mode: Grid or Detail
         if st.session_state.selected_history_item:
             # Detail view
