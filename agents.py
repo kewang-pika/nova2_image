@@ -29,6 +29,8 @@ from prompts import (
     VARIATION_FULL_PROMPT_TEMPLATE,
     VARIATION_DEFAULT_PROMPTS,
     VARIATION_FALLBACK_PROMPTS,
+    VARIATION_DEFAULT_STRUCTURED,
+    VARIATION_FALLBACK_STRUCTURED,
 )
 
 load_dotenv()
@@ -455,10 +457,10 @@ class VariationsAgent:
 
     async def create_prompts(self, structured_prompt: str, image_bytes: bytes) -> list:
         """
-        AI generates 4 diverse variation prompts.
+        AI generates 4 diverse variation prompts with subject subsets.
 
         Returns:
-            List of 4 variation prompt strings
+            List of 4 dicts: [{"subjects": [...], "editing_prompt": "..."}, ...]
         """
         try:
             print("[VariationsAgent] Generating 4 variation prompts...")
@@ -477,38 +479,45 @@ class VariationsAgent:
 
             print(f"[VariationsAgent] AI response:\n{result_text}")
 
-            # Parse the 4 prompts - ONLY accept lines starting with 1-4
-            lines = result_text.split('\n')
-            prompts = []
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
+            # Parse JSON response
+            # Clean markdown code fences
+            clean_text = re.sub(r'```json\s*|\s*```', '', result_text).strip()
 
-                # ONLY accept lines that start with a number 1-4
-                # Formats: "1.", "1)", "1:", "1 ", etc.
-                if len(line) > 2 and line[0] in '1234':
-                    # Check for separator after number
-                    if line[1] in '.):- ' or (line[1].isspace()):
-                        # Extract the actual prompt text
-                        prompt_text = line[2:].strip()
-                        # Handle "1. " format (extra space after separator)
-                        if prompt_text.startswith(' '):
-                            prompt_text = prompt_text.strip()
-                        if prompt_text and len(prompt_text) > 5:
-                            prompts.append(prompt_text)
+            # Find JSON array
+            json_match = re.search(r'\[[\s\S]*\]', clean_text)
+            if json_match:
+                try:
+                    variations = json.loads(json_match.group())
 
-            # Ensure we have exactly 4 prompts using defaults from prompts.py
-            while len(prompts) < 4:
-                prompts.append(VARIATION_DEFAULT_PROMPTS[len(prompts)])
+                    # Validate structure
+                    valid_variations = []
+                    for v in variations:
+                        if isinstance(v, dict) and "subjects" in v and "editing_prompt" in v:
+                            # Normalize subjects to list
+                            subjects = v["subjects"]
+                            if isinstance(subjects, str):
+                                subjects = [subjects]
+                            valid_variations.append({
+                                "subjects": subjects,
+                                "editing_prompt": v["editing_prompt"]
+                            })
 
-            prompts = prompts[:4]
-            print(f"[VariationsAgent] Parsed prompts: {prompts}")
-            return prompts
+                    if len(valid_variations) >= 4:
+                        print(f"[VariationsAgent] Parsed {len(valid_variations)} structured prompts")
+                        return valid_variations[:4]
+                    else:
+                        print(f"[VariationsAgent] Only got {len(valid_variations)} valid variations, using defaults")
+
+                except json.JSONDecodeError as e:
+                    print(f"[VariationsAgent] JSON parse error: {e}")
+
+            # Fallback to structured defaults
+            print("[VariationsAgent] Using default structured prompts")
+            return VARIATION_DEFAULT_STRUCTURED
 
         except Exception as e:
             print(f"[VariationsAgent] Error generating prompts: {e}")
-            return VARIATION_FALLBACK_PROMPTS
+            return VARIATION_FALLBACK_STRUCTURED
 
     async def generate(self, original_selfie_bytes: bytes,
                  generated_image_bytes: bytes,
@@ -518,7 +527,10 @@ class VariationsAgent:
                  image_size: str = "1K",
                  additional_assets: list = None) -> dict:
         """
-        Generate 4 variations IN PARALLEL.
+        Generate 4 variations IN PARALLEL with dynamic subject filtering.
+
+        Args:
+            variation_prompts: List of dicts with {"subjects": [...], "editing_prompt": "..."}
 
         Returns:
             dict with:
@@ -533,37 +545,69 @@ class VariationsAgent:
 
         print(f"[VariationsAgent] Generating {len(variation_prompts)} variations in parallel...")
 
-        # Build subjects section once
-        subjects = f"Subjects:\n1. I/myself: {selfie_description} (attached image 1)\n"
-        subjects += f"2. Style reference: Match the visual style and color grading of this image (attached image 2)\n"
+        # Build asset name -> data mapping (case-insensitive)
+        asset_map = {asset['name'].lower(): asset for asset in additional_assets}
 
-        for i, asset in enumerate(additional_assets, start=3):
-            subjects += f"{i}. {asset['name']}: {asset['description']} (attached image {i})\n"
-
-        # Build full prompts list FIRST (before parallel execution) using template from prompts.py
+        # Prepare prompts and image configs for each variation
         full_prompts_list = []
-        for variation_prompt in variation_prompts:
+        image_configs = []  # Store which additional images to use per variation
+
+        for variation in variation_prompts:
+            selected_subjects = variation.get("subjects", ["I"])
+            editing_prompt = variation.get("editing_prompt", "")
+
+            # Normalize subject names to lowercase for matching
+            selected_lower = [s.lower() for s in selected_subjects]
+
+            # Build subjects section for selected subjects only
+            subjects_text = "Subjects:\n"
+            img_idx = 1
+            images_for_this_variation = []
+
+            # Always include "I/myself" if in selected subjects
+            if "i" in selected_lower or "myself" in selected_lower:
+                subjects_text += f"{img_idx}. I/myself: {selfie_description} (attached image {img_idx})\n"
+                img_idx += 1
+
+            # Style reference is always included (image 2)
+            subjects_text += f"{img_idx}. Style reference: Match the visual style of this image (attached image {img_idx})\n"
+            img_idx += 1
+
+            # Add selected assets only
+            for subject_name in selected_subjects:
+                subject_lower = subject_name.lower()
+                if subject_lower not in ["i", "myself"] and subject_lower in asset_map:
+                    asset = asset_map[subject_lower]
+                    subjects_text += f"{img_idx}. {asset['name']}: {asset['description']} (attached image {img_idx})\n"
+                    images_for_this_variation.append(asset['image_bytes'])
+                    img_idx += 1
+
+            # Build full prompt
             full_prompt = VARIATION_FULL_PROMPT_TEMPLATE.format(
-                subjects=subjects,
-                variation_prompt=variation_prompt
+                subjects=subjects_text,
+                variation_prompt=editing_prompt
             )
             full_prompts_list.append(full_prompt)
+            image_configs.append(images_for_this_variation)
 
-        async def generate_single(full_prompt: str) -> bytes:
-            print(f"[VariationsAgent] Generating: {full_prompt[200:250]}...")
+            print(f"[VariationsAgent] Variation subjects: {selected_subjects}, prompt: {editing_prompt[:50]}...")
 
-            all_additional = [generated_image_bytes] + [a['image_bytes'] for a in additional_assets]
+        # Generate with filtered images per variation
+        async def generate_single(idx: int) -> bytes:
+            full_prompt = full_prompts_list[idx]
+            # Always include style reference (generated image), plus filtered assets
+            additional = [generated_image_bytes] + image_configs[idx]
 
             return await self.generate_fn(
                 image_bytes=original_selfie_bytes,
                 prompt=full_prompt,
                 aspect_ratio=aspect_ratio,
                 image_size=image_size,
-                additional_images=all_additional
+                additional_images=additional
             )
 
         # Generate all 4 in parallel using asyncio.gather
-        results = await asyncio.gather(*[generate_single(p) for p in full_prompts_list])
+        results = await asyncio.gather(*[generate_single(i) for i in range(len(variation_prompts))])
 
         print(f"[VariationsAgent] Generated {len(results)} variations")
         return {

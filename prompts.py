@@ -198,36 +198,48 @@ VARIATION_PROMPT_INSTRUCTION = """Look at this generated image and the prompt th
 
 Create 4 DIFFERENT shots for an Instagram carousel - same scene, different angles/poses/moments.
 
+AVAILABLE SUBJECTS - Extract from the "Subjects:" section above (e.g., "I/myself", "demi", "jiajun").
+Each variation can feature ALL subjects or a SUBSET of them.
+
 KEEP THE SAME (CRITICAL):
-- Same people/subjects (identity, face)
-- **OUTFIT MUST BE IDENTICAL** - exact same clothing, colors, patterns, accessories as the first image. Do NOT change any clothing details.
-- Same SCENE and ENVIRONMENT (exact same location/setting as the first image)
+- Same people/subjects (identity, face) when included
+- **OUTFIT MUST BE IDENTICAL** - exact same clothing, colors, patterns, accessories
+- Same SCENE and ENVIRONMENT
 - Same visual style/aesthetic
-- Same story/concept
 
-VARY THESE within the same scene:
-1. CAMERA ANGLE: close-up / medium / full body / wide / from above / from below / side angle
+VARY THESE:
+1. CAMERA ANGLE: close-up / medium / full body / wide / from above / from below
 2. POSE/ACTION: different body positions, gestures, movements
-3. MOMENT: different expressions, interactions, timing
-4. COMPOSITION: subject placement in frame
+3. MOMENT: different expressions, interactions
+4. SUBJECT COMBINATION: can feature a subset of subjects (e.g., just "I", just "demi", or "I and demi")
 
-Think like a photographer doing multiple shots at the SAME LOCATION - capturing different angles and moments of the same scene. The subject's outfit should be EXACTLY the same in every shot.
+OUTPUT FORMAT - Return ONLY a valid JSON array with exactly 4 objects:
+```json
+[
+  {{"subjects": ["I", "demi"], "editing_prompt": "Close-up of I and demi cooking together, steam rising"}},
+  {{"subjects": ["I"], "editing_prompt": "Wide shot of I alone stirring at the stove"}},
+  {{"subjects": ["demi"], "editing_prompt": "Side profile of demi chopping vegetables"}},
+  {{"subjects": ["I", "demi"], "editing_prompt": "Over-shoulder of I watching demi plate the dish"}}
+]
+```
 
-Output 4 SHORT prompts (1-2 sentences), numbered 1-4.
+RULES:
+- "subjects" array: list subject names exactly as they appear (use "I" for yourself, asset names like "demi", "jiajun" for others)
+- "editing_prompt": MUST reference the subjects by name AND include the scenario (e.g., "cooking", "at beach party")
+- Keep editing_prompt SHORT (1-2 sentences)
+- Do NOT use generic terms like "subject" or "the person"
 
-Example for "encounter a T-Rex on beach" (all on the SAME beach, SAME outfit):
-1. Extreme close-up of terrified faces, T-Rex towering behind them
-2. Wide shot from behind, two figures facing the massive T-Rex on the sandy beach
-3. Low angle looking up at them running, T-Rex in pursuit, sand flying
-4. Side profile shot, frozen mid-scream, T-Rex's head entering frame
+Example - Original: "I and demi encounter a T-Rex at the beach"
+```json
+[
+  {{"subjects": ["I", "demi"], "editing_prompt": "Close-up of I and demi's terrified faces at the beach, T-Rex behind"}},
+  {{"subjects": ["I"], "editing_prompt": "Wide shot of I running alone from the T-Rex on the beach"}},
+  {{"subjects": ["demi"], "editing_prompt": "Low angle of demi screaming at the T-Rex encounter"}},
+  {{"subjects": ["I", "demi"], "editing_prompt": "Side profile of I and demi frozen mid-scream, T-Rex entering frame"}}
+]
+```
 
-Example for "dinner date at Beijing night market" (all at the SAME market, SAME outfit):
-1. Close-up of couple laughing, street food stall lights in background
-2. Wide shot of them walking through the crowded market, lanterns overhead
-3. Over-shoulder view as they share food, market bustle behind
-4. Medium shot sitting at a small table, steam rising from dishes
-
-Your 4 variations (same scene, same outfit, different shots):"""
+Your JSON output (4 objects with subjects and editing_prompt):"""
 
 
 VARIATION_FULL_PROMPT_TEMPLATE = """{subjects}
@@ -239,13 +251,28 @@ CRITICAL REQUIREMENTS:
 - Only vary camera angle, pose, and moment - location, atmosphere, and outfit should match exactly!"""
 
 
+# Structured fallback prompts (used when JSON parsing fails)
+VARIATION_DEFAULT_STRUCTURED = [
+    {"subjects": ["I"], "editing_prompt": "Close-up portrait with natural expression, face filling the frame"},
+    {"subjects": ["I"], "editing_prompt": "Full body shot from a distance, environment visible"},
+    {"subjects": ["I"], "editing_prompt": "Candid moment looking away, natural pose"},
+    {"subjects": ["I"], "editing_prompt": "Wide cinematic shot, small figure in vast scene"}
+]
+
+VARIATION_FALLBACK_STRUCTURED = [
+    {"subjects": ["I"], "editing_prompt": "Close-up portrait"},
+    {"subjects": ["I"], "editing_prompt": "Full body shot"},
+    {"subjects": ["I"], "editing_prompt": "Candid moment"},
+    {"subjects": ["I"], "editing_prompt": "Wide shot"}
+]
+
+# Legacy string-based prompts (kept for backward compatibility)
 VARIATION_DEFAULT_PROMPTS = [
     "Close-up portrait with natural expression, subject filling the frame",
     "Wide cinematic shot from above, subject small in vast environment",
     "Action shot mid-movement, dramatic angle, motion blur",
     "Candid moment from behind or side, looking into the distance"
 ]
-
 
 VARIATION_FALLBACK_PROMPTS = [
     "Close-up portrait with natural expression",
