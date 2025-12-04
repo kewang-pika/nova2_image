@@ -7,17 +7,17 @@ import io
 import re
 import json
 import base64
-from concurrent.futures import ThreadPoolExecutor
+import asyncio
 from PIL import Image
-from google import genai
 from dotenv import load_dotenv
+
+# Import llm_utils functions
+from llm_utils import run_gemini, run_gemini_json, run_gemini_with_image
 
 load_dotenv()
 
 # ============== CONFIG ==============
-API_KEY = os.getenv("GOOGLE_API_KEY")
 MODEL_REWRITE = "gemini-2.5-flash"
-client = genai.Client(api_key=API_KEY)
 
 # ============== STYLE PRESETS ==============
 STYLE_PRESETS = {
@@ -100,7 +100,6 @@ class StyleAgent:
     """Agent for detecting and selecting style presets."""
 
     def __init__(self, system_prompt: str = None):
-        self.client = client
         self.model = MODEL_REWRITE
         self.presets = STYLE_PRESETS
         self.categories = STYLE_CATEGORIES
@@ -115,7 +114,7 @@ class StyleAgent:
         """Get the current system prompt."""
         return self.system_prompt
 
-    def detect(self, prompt: str) -> dict:
+    async def detect(self, prompt: str) -> dict:
         """
         Analyze prompt and select the best matching style preset.
         Uses AI to understand the prompt context and select appropriate style.
@@ -129,22 +128,15 @@ class StyleAgent:
             # Use the configurable system prompt with {prompt} placeholder
             style_instruction = self.system_prompt.format(prompt=prompt)
 
-            response = self.client.models.generate_content(
+            # Use run_gemini_json for JSON output
+            result = await run_gemini_json(
+                prompt=style_instruction,
                 model=self.model,
-                contents=[style_instruction]
+                temperature=0.7
             )
 
-            result_text = response.text.strip()
-            print(f"[StyleAgent] AI response: {result_text}")
+            print(f"[StyleAgent] AI response: {result}")
 
-            # Handle markdown code blocks
-            if "```" in result_text:
-                result_text = result_text.split("```")[1]
-                if result_text.startswith("json"):
-                    result_text = result_text[4:]
-                result_text = result_text.strip()
-
-            result = json.loads(result_text)
             category = result.get("category", "editorial")
             custom_aesthetic = result.get("custom_aesthetic")
 
@@ -203,7 +195,7 @@ class StyleAgent:
                 "style_prompt": self.presets["editorial"]
             }
 
-    def detect_with_aesthetic(self, prompt: str, aesthetic: dict = None) -> dict:
+    async def detect_with_aesthetic(self, prompt: str, aesthetic: dict = None) -> dict:
         """
         Detect style using optional aesthetic preferences.
 
@@ -220,7 +212,7 @@ class StyleAgent:
         """
         # If no aesthetic provided, use regular detection
         if not aesthetic or not aesthetic.get("visual_style"):
-            return self.detect(prompt)
+            return await self.detect(prompt)
 
         visual_style = aesthetic.get("visual_style", "")
         avoids = aesthetic.get("avoids", [])
@@ -263,22 +255,15 @@ Return JSON:
 
 Output:"""
 
-            response = self.client.models.generate_content(
+            # Use run_gemini_json for JSON output
+            result = await run_gemini_json(
+                prompt=aesthetic_instruction,
                 model=self.model,
-                contents=[aesthetic_instruction]
+                temperature=0.7
             )
 
-            result_text = response.text.strip()
-            print(f"[StyleAgent] AI response: {result_text}")
+            print(f"[StyleAgent] AI response: {result}")
 
-            # Handle markdown code blocks
-            if "```" in result_text:
-                result_text = result_text.split("```")[1]
-                if result_text.startswith("json"):
-                    result_text = result_text[4:]
-                result_text = result_text.strip()
-
-            result = json.loads(result_text)
             category = result.get("category", "editorial")
             custom_style_prompt = result.get("custom_style_prompt")
 
@@ -344,7 +329,7 @@ Output:"""
 
         except Exception as e:
             print(f"[StyleAgent] Error with aesthetic: {e}, falling back to regular detection")
-            return self.detect(prompt)
+            return await self.detect(prompt)
 
     def get_preset(self, style_key: str) -> str:
         """Get style preset text by key."""
@@ -362,7 +347,6 @@ class PromptAgent:
     """Agent for parsing and rewriting prompts."""
 
     def __init__(self, style_agent: StyleAgent = None):
-        self.client = client
         self.model = MODEL_REWRITE
         self.style_agent = style_agent or StyleAgent()
 
@@ -381,18 +365,19 @@ class PromptAgent:
         """Remove @mentions, keeping just asset names."""
         return re.sub(r'@(\w+)', r'\1', prompt)
 
-    def describe_image(self, image_bytes: bytes) -> str:
+    async def describe_image(self, image_bytes: bytes) -> str:
         """AI describes the attached image."""
-        pil_image = Image.open(io.BytesIO(image_bytes))
         describe_instruction = "Describe this person/subject in detail. Include their appearance, what they're wearing, their features, setting, etc. Be concise but descriptive (1-2 sentences)."
 
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=[describe_instruction, pil_image]
+        # Use run_gemini_with_image for text output with image input
+        result = await run_gemini_with_image(
+            image=image_bytes,
+            prompt=describe_instruction,
+            model=self.model
         )
-        return response.text.strip()
+        return result
 
-    def _rewrite_call(self, original_prompt: str, image_description: str, asset_names: list = None) -> str:
+    async def _rewrite_call(self, original_prompt: str, image_description: str, asset_names: list = None) -> str:
         """Internal helper: Rewrite the prompt based on image description."""
         if asset_names is None:
             asset_names = []
@@ -431,12 +416,12 @@ Examples:
 
 Rewritten prompt (just the action, nothing else):"""
 
-        response = self.client.models.generate_content(
+        # Use run_gemini for text output
+        rewritten = await run_gemini(
+            prompt=rewrite_instruction,
             model=self.model,
-            contents=[rewrite_instruction]
+            temperature=0.7
         )
-
-        rewritten = response.text.strip()
 
         # Clean up common prefixes
         prefixes_to_remove = [
@@ -456,7 +441,7 @@ Rewritten prompt (just the action, nothing else):"""
 
         return rewritten
 
-    def rewrite(self, original_prompt: str, image_bytes: bytes, mentioned_assets: list = None, aesthetic: dict = None, outfit_adaptive: bool = True) -> dict:
+    async def rewrite(self, original_prompt: str, image_bytes: bytes, mentioned_assets: list = None, aesthetic: dict = None, outfit_adaptive: bool = True) -> dict:
         """
         Full prompt enhancement pipeline.
         Runs style detection in parallel with prompt rewriting.
@@ -480,7 +465,7 @@ Rewritten prompt (just the action, nothing else):"""
         try:
             # Step 1: Describe the attached image
             print("[PromptAgent] Describing attached image...")
-            image_description = self.describe_image(image_bytes)
+            image_description = await self.describe_image(image_bytes)
             print(f"[PromptAgent] Image description: {image_description}")
 
             # Build subjects list - base image first
@@ -497,21 +482,23 @@ Rewritten prompt (just the action, nothing else):"""
             description_text = "\n".join(subjects)
             print(f"[PromptAgent] Subjects:\n{description_text}")
 
-            # Step 2: Run rewrite and style detection in PARALLEL
+            # Step 2: Run rewrite and style detection in PARALLEL using asyncio.gather
             clean_prompt = self.remove_mentions(original_prompt)
             asset_names = [asset.get("name", "") for asset in mentioned_assets if asset.get("name")]
 
             print("[PromptAgent] Running rewrite + style detection in parallel...")
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                rewrite_future = executor.submit(self._rewrite_call, clean_prompt, image_description, asset_names)
-                # Use aesthetic-aware detection if aesthetic provided
-                if aesthetic and aesthetic.get("visual_style"):
-                    style_future = executor.submit(self.style_agent.detect_with_aesthetic, original_prompt, aesthetic)
-                else:
-                    style_future = executor.submit(self.style_agent.detect, original_prompt)
 
-                rewritten = rewrite_future.result()
-                style_result = style_future.result()
+            # Use aesthetic-aware detection if aesthetic provided
+            if aesthetic and aesthetic.get("visual_style"):
+                style_coro = self.style_agent.detect_with_aesthetic(original_prompt, aesthetic)
+            else:
+                style_coro = self.style_agent.detect(original_prompt)
+
+            # Run both in parallel
+            rewritten, style_result = await asyncio.gather(
+                self._rewrite_call(clean_prompt, image_description, asset_names),
+                style_coro
+            )
 
             print(f"[PromptAgent] Original: {original_prompt}")
             print(f"[PromptAgent] Rewritten: {rewritten}")
@@ -574,11 +561,10 @@ class VariationsAgent:
     """Agent for generating image variations."""
 
     def __init__(self, generate_fn=None):
-        self.client = client
         self.model = MODEL_REWRITE
         self.generate_fn = generate_fn  # Reference to generate_image()
 
-    def create_prompts(self, structured_prompt: str, image_bytes: bytes) -> list:
+    async def create_prompts(self, structured_prompt: str, image_bytes: bytes) -> list:
         """
         AI generates 4 diverse variation prompts.
 
@@ -587,8 +573,6 @@ class VariationsAgent:
         """
         try:
             print("[VariationsAgent] Generating 4 variation prompts...")
-
-            pil_image = Image.open(io.BytesIO(image_bytes))
 
             variation_instruction = f"""Look at this generated image and the prompt that created it:
 
@@ -627,12 +611,13 @@ Example for "dinner date at Beijing night market" (all at the SAME market, SAME 
 
 Your 4 variations (same scene, same outfit, different shots):"""
 
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=[variation_instruction, pil_image]
+            # Use run_gemini_with_image for text output with image input
+            result_text = await run_gemini_with_image(
+                image=image_bytes,
+                prompt=variation_instruction,
+                model=self.model
             )
 
-            result_text = response.text.strip()
             print(f"[VariationsAgent] AI response:\n{result_text}")
 
             # Parse the 4 prompts - ONLY accept lines starting with 1-4
@@ -679,7 +664,7 @@ Your 4 variations (same scene, same outfit, different shots):"""
                 "Wide shot with more environment visible"
             ]
 
-    def generate(self, original_selfie_bytes: bytes,
+    async def generate(self, original_selfie_bytes: bytes,
                  generated_image_bytes: bytes,
                  selfie_description: str,
                  variation_prompts: list,
@@ -721,12 +706,12 @@ CRITICAL REQUIREMENTS:
 - Only vary camera angle, pose, and moment - location, atmosphere, and outfit should match exactly!"""
             full_prompts_list.append(full_prompt)
 
-        def generate_single(full_prompt: str) -> bytes:
+        async def generate_single(full_prompt: str) -> bytes:
             print(f"[VariationsAgent] Generating: {full_prompt[200:250]}...")
 
             all_additional = [generated_image_bytes] + [a['image_bytes'] for a in additional_assets]
 
-            return self.generate_fn(
+            return await self.generate_fn(
                 image_bytes=original_selfie_bytes,
                 prompt=full_prompt,
                 aspect_ratio=aspect_ratio,
@@ -734,13 +719,12 @@ CRITICAL REQUIREMENTS:
                 additional_images=all_additional
             )
 
-        # Generate all 4 in parallel using full prompts
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            results = list(executor.map(generate_single, full_prompts_list))
+        # Generate all 4 in parallel using asyncio.gather
+        results = await asyncio.gather(*[generate_single(p) for p in full_prompts_list])
 
         print(f"[VariationsAgent] Generated {len(results)} variations")
         return {
-            "images": results,
+            "images": list(results),
             "full_prompts": full_prompts_list
         }
 

@@ -7,6 +7,7 @@ With Asset Closet and @mention support
 import os
 import io
 import base64
+import asyncio
 import streamlit as st
 from PIL import Image
 from datetime import datetime
@@ -523,7 +524,7 @@ if generate_clicked:
 
                 if use_ai_rewrite:
                     with st.status("Analyzing image and enhancing prompt..."):
-                        rewrite_result = rewrite_prompt(prompt, image_bytes, mentioned_assets, aesthetic_prefs, outfit_adaptive)
+                        rewrite_result = asyncio.run(rewrite_prompt(prompt, image_bytes, mentioned_assets, aesthetic_prefs, outfit_adaptive))
                         st.session_state.image_description = rewrite_result["structured_output"]
                         st.session_state.final_prompt = rewrite_result["rewritten_prompt"]
                         st.session_state.detected_style = rewrite_result.get("style_name", "Editorial")
@@ -541,13 +542,13 @@ if generate_clicked:
 
                 # Generate image
                 with st.status("Generating image..."):
-                    result_bytes = generate_image(
+                    result_bytes = asyncio.run(generate_image(
                         image_bytes=image_bytes,
                         prompt=final_prompt,
                         aspect_ratio=aspect_ratio,
                         image_size=image_size,
                         additional_images=additional_images
-                    )
+                    ))
 
                 # Store result
                 st.session_state.generated_image = result_bytes
@@ -661,17 +662,17 @@ if st.session_state.generated_image and st.session_state.image_description and s
             try:
                 # Step 1: Get variation prompts using structured prompt + generated image
                 with st.status("Creating variation ideas...") as status:
-                    var_prompts = generate_variation_prompts(
+                    var_prompts = asyncio.run(generate_variation_prompts(
                         structured_prompt=st.session_state.image_description,
                         image_bytes=st.session_state.generated_image
-                    )
+                    ))
                     for i, p in enumerate(var_prompts, 1):
                         st.write(f"{i}. {p}")
                     status.update(label="Variation ideas created!", state="complete")
 
                 # Step 2: Generate all 4 variations IN PARALLEL
                 with st.status("Generating 4 images in parallel...") as status:
-                    result = generate_variations(
+                    result = asyncio.run(generate_variations(
                         original_selfie_bytes=st.session_state.original_selfie_bytes,
                         generated_image_bytes=st.session_state.generated_image,
                         selfie_description=st.session_state.selfie_description,
@@ -679,7 +680,7 @@ if st.session_state.generated_image and st.session_state.image_description and s
                         aspect_ratio=aspect_ratio,
                         image_size=image_size,
                         additional_assets=st.session_state.generation_assets
-                    )
+                    ))
                     status.update(label="All 4 variations generated!", state="complete")
 
                 # Store images and full prompts separately

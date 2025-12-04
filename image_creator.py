@@ -6,11 +6,13 @@ Standalone image editing module using Gemini gemini-3-pro-image-preview
 import os
 import io
 import json
+import asyncio
 from datetime import datetime
 from PIL import Image
-from google import genai
-from google.genai import types
 from dotenv import load_dotenv
+
+# Import llm_utils for image generation
+from llm_utils import run_gemini_generate_image
 
 # Import from agents module
 from agents import (
@@ -28,12 +30,8 @@ from agents import (
 load_dotenv()
 
 # Configuration
-API_KEY = os.getenv("GOOGLE_API_KEY")
 MODEL_IMAGE = "gemini-3-pro-image-preview"
 MODEL_REWRITE = "gemini-2.5-flash"
-
-# Initialize Gemini client
-client = genai.Client(api_key=API_KEY)
 
 # Output directory
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "generated_images")
@@ -106,7 +104,7 @@ def reset_style_system_prompt():
 
 
 # ============== CORE GENERATION ==============
-def generate_image(
+async def generate_image(
     image_bytes: bytes,
     prompt: str,
     aspect_ratio: str = "9:16",
@@ -150,56 +148,40 @@ def generate_image(
         print(f"[Generate] Image size: {image_size}")
         print(f"[Generate] ====================\n")
 
-        # Build contents: [prompt, base_image, additional_images...]
-        contents = [prompt, pil_image] + additional_pil
+        # Build images list: [base_image, additional_images...]
+        all_pil_images = [pil_image] + additional_pil
 
-        # Build ImageConfig with aspect ratio and image size
-        img_config = types.ImageConfig(
-            aspectRatio=aspect_ratio,
-            imageSize=image_size
-        )
-
-        # Call Gemini API
-        response = client.models.generate_content(
+        # Call Gemini API via llm_utils
+        image_data = await run_gemini_generate_image(
+            prompt=prompt,
+            images=all_pil_images,
             model=MODEL_IMAGE,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                response_modalities=['IMAGE'],
-                image_config=img_config
-            )
+            aspect_ratio=aspect_ratio,
+            image_size=image_size
         )
 
-        # Extract image from response
-        if not response.candidates or not response.candidates[0].content.parts:
-            raise ValueError("No image generated in response")
+        # Process result image
+        result_image = Image.open(io.BytesIO(image_data))
 
-        for part in response.candidates[0].content.parts:
-            if part.inline_data is not None:
-                # Get raw image data
-                image_data = part.inline_data.data
-                result_image = Image.open(io.BytesIO(image_data))
+        # Convert to RGB (JPEG doesn't support alpha)
+        if result_image.mode in ('RGBA', 'LA', 'P'):
+            rgb_img = Image.new('RGB', result_image.size, (255, 255, 255))
+            if result_image.mode == 'P':
+                result_image = result_image.convert('RGBA')
+            rgb_img.paste(
+                result_image,
+                mask=result_image.split()[-1] if result_image.mode in ('RGBA', 'LA') else None
+            )
+        else:
+            rgb_img = result_image.convert('RGB')
 
-                # Convert to RGB (JPEG doesn't support alpha)
-                if result_image.mode in ('RGBA', 'LA', 'P'):
-                    rgb_img = Image.new('RGB', result_image.size, (255, 255, 255))
-                    if result_image.mode == 'P':
-                        result_image = result_image.convert('RGBA')
-                    rgb_img.paste(
-                        result_image,
-                        mask=result_image.split()[-1] if result_image.mode in ('RGBA', 'LA') else None
-                    )
-                else:
-                    rgb_img = result_image.convert('RGB')
+        # Save as high-quality JPEG
+        jpg_buffer = io.BytesIO()
+        rgb_img.save(jpg_buffer, format='JPEG', quality=95, optimize=True)
+        jpg_bytes = jpg_buffer.getvalue()
 
-                # Save as high-quality JPEG
-                jpg_buffer = io.BytesIO()
-                rgb_img.save(jpg_buffer, format='JPEG', quality=95, optimize=True)
-                jpg_bytes = jpg_buffer.getvalue()
-
-                print(f"[Generate] Success! Output size: {rgb_img.size}")
-                return jpg_bytes
-
-        raise ValueError("No image data found in response")
+        print(f"[Generate] Success! Output size: {rgb_img.size}")
+        return jpg_bytes
 
     except Exception as e:
         print(f"[Generate] Error: {e}")
@@ -255,12 +237,12 @@ def remove_mentions_from_prompt(prompt: str) -> str:
     return prompt_agent.remove_mentions(prompt)
 
 
-def detect_style(prompt: str) -> dict:
+async def detect_style(prompt: str) -> dict:
     """Detect style from prompt. Wrapper for StyleAgent.detect()."""
-    return style_agent.detect(prompt)
+    return await style_agent.detect(prompt)
 
 
-def rewrite_prompt(original_prompt: str, image_bytes: bytes, mentioned_assets: list = None, aesthetic: dict = None, outfit_adaptive: bool = True) -> dict:
+async def rewrite_prompt(original_prompt: str, image_bytes: bytes, mentioned_assets: list = None, aesthetic: dict = None, outfit_adaptive: bool = True) -> dict:
     """Rewrite and enhance prompt. Wrapper for PromptAgent.rewrite().
 
     Args:
@@ -272,15 +254,15 @@ def rewrite_prompt(original_prompt: str, image_bytes: bytes, mentioned_assets: l
         outfit_adaptive: If True (default), AI can adapt outfits to scene.
             If False, strictly preserve outfits from attachments.
     """
-    return prompt_agent.rewrite(original_prompt, image_bytes, mentioned_assets, aesthetic, outfit_adaptive)
+    return await prompt_agent.rewrite(original_prompt, image_bytes, mentioned_assets, aesthetic, outfit_adaptive)
 
 
-def generate_variation_prompts(structured_prompt: str, image_bytes: bytes) -> list:
+async def generate_variation_prompts(structured_prompt: str, image_bytes: bytes) -> list:
     """Generate 4 variation prompts. Wrapper for VariationsAgent.create_prompts()."""
-    return variations_agent.create_prompts(structured_prompt, image_bytes)
+    return await variations_agent.create_prompts(structured_prompt, image_bytes)
 
 
-def generate_variations(
+async def generate_variations(
     original_selfie_bytes: bytes,
     generated_image_bytes: bytes,
     selfie_description: str,
@@ -290,7 +272,7 @@ def generate_variations(
     additional_assets: list = None
 ) -> dict:
     """Generate 4 variations in parallel. Returns dict with 'images' and 'full_prompts'."""
-    return variations_agent.generate(
+    return await variations_agent.generate(
         original_selfie_bytes,
         generated_image_bytes,
         selfie_description,
@@ -466,7 +448,7 @@ def run_cli():
         additional_images = []
 
         if use_rewrite != 'n':
-            result = rewrite_prompt(prompt, image_bytes, mentioned_assets)
+            result = asyncio.run(rewrite_prompt(prompt, image_bytes, mentioned_assets))
             print(f"\n{result['structured_output']}\n")
             prompt = result['rewritten_prompt']
             # Get additional images from rewrite result (excluding base image)
@@ -489,10 +471,10 @@ def run_cli():
         # Generate
         print("\nGenerating...")
         try:
-            result_bytes = generate_image(
+            result_bytes = asyncio.run(generate_image(
                 image_bytes, prompt, aspect, size,
                 additional_images=additional_images
-            )
+            ))
             output_path = save_image(result_bytes)
             print(f"\nDone! Image saved to: {output_path}\n")
         except Exception as e:
