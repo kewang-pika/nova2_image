@@ -13,6 +13,12 @@ from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
+# Import prompts from centralized prompts.py
+from prompts import (
+    CATEGORY_DESCRIPTION_PROMPTS,
+    DESCRIBE_GENERIC_PROMPT,
+)
+
 # Load environment variables
 load_dotenv()
 
@@ -50,15 +56,8 @@ def describe_asset(image_bytes: bytes, category: str) -> str:
     try:
         pil_image = Image.open(io.BytesIO(image_bytes))
 
-        # Category-specific prompts
-        prompts = {
-            "people": "Describe this person in detail. Include their appearance, facial features, hair, and any distinctive characteristics. Be concise (1-2 sentences).",
-            "outfit": "Describe this clothing/outfit in detail. Include the type of garment, color, style, and any distinctive features. Be concise (1-2 sentences).",
-            "location": "Describe this location/setting in detail. Include the environment, atmosphere, and key visual elements. Be concise (1-2 sentences).",
-            "style": "Describe the visual style/aesthetic of this image. Include the mood, color palette, lighting, and artistic qualities. Be concise (1-2 sentences)."
-        }
-
-        prompt = prompts.get(category, "Describe this image in detail. Be concise (1-2 sentences).")
+        # Get category-specific prompt from centralized prompts.py
+        prompt = CATEGORY_DESCRIPTION_PROMPTS.get(category, DESCRIBE_GENERIC_PROMPT)
 
         print(f"[Closet] Generating description for {category}...")
         response = client.models.generate_content(
