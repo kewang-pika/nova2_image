@@ -199,7 +199,7 @@ VARIATION_PROMPT_INSTRUCTION = """Look at this generated image and the prompt th
 Create 4 DIFFERENT shots for an Instagram carousel - same scene, different angles/poses/moments.
 
 AVAILABLE SUBJECTS - Extract from the "Subjects:" section above (e.g., "I/myself", "demi", "jiajun").
-Each variation can feature ALL subjects or a SUBSET of them.
+Each variation can feature ALL subjects, a SUBSET, or special shots (scene/POV).
 
 KEEP THE SAME (CRITICAL):
 - Same people/subjects (identity, face) when included
@@ -212,20 +212,24 @@ VARY THESE:
 2. POSE/ACTION: different body positions, gestures, movements
 3. MOMENT: different expressions, interactions
 4. SUBJECT COMBINATION: can feature a subset of subjects (e.g., just "I", just "demi", or "I and demi")
+5. SPECIAL SHOTS:
+   - "scene" - environment/objects only, NO people visible (e.g., close-up of food, wide shot of location)
+   - "POV" - first-person point of view. If OTHER people are visible in the POV shot, include them! e.g., ["POV", "demi"]
 
 OUTPUT FORMAT - Return ONLY a valid JSON array with exactly 4 objects:
 ```json
 [
   {{"subjects": ["I", "demi"], "editing_prompt": "Close-up of I and demi cooking together, steam rising"}},
-  {{"subjects": ["I"], "editing_prompt": "Wide shot of I alone stirring at the stove"}},
-  {{"subjects": ["demi"], "editing_prompt": "Side profile of demi chopping vegetables"}},
-  {{"subjects": ["I", "demi"], "editing_prompt": "Over-shoulder of I watching demi plate the dish"}}
+  {{"subjects": ["POV", "demi"], "editing_prompt": "First-person POV looking at demi chopping vegetables"}},
+  {{"subjects": ["scene"], "editing_prompt": "Wide shot of the steaming pots on the kitchen counter"}},
+  {{"subjects": ["I"], "editing_prompt": "Side angle of I tasting the dish"}}
 ]
 ```
 
 RULES:
-- "subjects" array: list subject names exactly as they appear (use "I" for yourself, asset names like "demi", "jiajun" for others)
-- "editing_prompt": MUST reference the subjects by name AND include the scenario (e.g., "cooking", "at beach party")
+- "subjects" array: use "I" for yourself, asset names like "demi"/"jiajun" for others, "scene" for no-people shots, "POV" for first-person view
+- For POV shots: if other people are VISIBLE in the shot, include them (e.g., ["POV", "I"] or ["POV", "demi"])
+- "editing_prompt": MUST include the scenario context (e.g., "cooking", "at beach party")
 - Keep editing_prompt SHORT (1-2 sentences)
 - Do NOT use generic terms like "subject" or "the person"
 
@@ -233,9 +237,9 @@ Example - Original: "I and demi encounter a T-Rex at the beach"
 ```json
 [
   {{"subjects": ["I", "demi"], "editing_prompt": "Close-up of I and demi's terrified faces at the beach, T-Rex behind"}},
-  {{"subjects": ["I"], "editing_prompt": "Wide shot of I running alone from the T-Rex on the beach"}},
-  {{"subjects": ["demi"], "editing_prompt": "Low angle of demi screaming at the T-Rex encounter"}},
-  {{"subjects": ["I", "demi"], "editing_prompt": "Side profile of I and demi frozen mid-scream, T-Rex entering frame"}}
+  {{"subjects": ["POV", "demi"], "editing_prompt": "First-person POV looking at demi screaming at the T-Rex"}},
+  {{"subjects": ["scene"], "editing_prompt": "Wide shot of T-Rex footprints in the sand, beach waves in background"}},
+  {{"subjects": ["I"], "editing_prompt": "Side profile of I frozen mid-scream at the T-Rex encounter"}}
 ]
 ```
 
@@ -246,7 +250,7 @@ VARIATION_FULL_PROMPT_TEMPLATE = """{subjects}
 Editing prompt: {variation_prompt}
 
 CRITICAL REQUIREMENTS:
-- OUTFIT MUST BE IDENTICAL to the reference image (attached image 2) - same clothing, colors, patterns, accessories. Do NOT change any clothing.
+- OUTFIT MUST BE IDENTICAL to the reference image - same clothing, colors, patterns, accessories. Do NOT change any clothing.
 - Keep the SAME scene/setting/environment as the reference image
 - Only vary camera angle, pose, and moment - location, atmosphere, and outfit should match exactly!"""
 

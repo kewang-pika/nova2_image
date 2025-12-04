@@ -531,6 +531,7 @@ class VariationsAgent:
 
         Args:
             variation_prompts: List of dicts with {"subjects": [...], "editing_prompt": "..."}
+                - subjects can include: "I", person names, "scene" (no people), "POV" (first-person)
 
         Returns:
             dict with:
@@ -551,6 +552,7 @@ class VariationsAgent:
         # Prepare prompts and image configs for each variation
         full_prompts_list = []
         image_configs = []  # Store which additional images to use per variation
+        use_selfie_flags = []  # Track whether to use selfie as base image
 
         for variation in variation_prompts:
             selected_subjects = variation.get("subjects", ["I"])
@@ -559,28 +561,67 @@ class VariationsAgent:
             # Normalize subject names to lowercase for matching
             selected_lower = [s.lower() for s in selected_subjects]
 
-            # Build subjects section for selected subjects only
-            subjects_text = "Subjects:\n"
+            # Check for special variation types
+            is_scene_only = "scene" in selected_lower
+            is_pov = "pov" in selected_lower
+
+            # For POV/scene: check if other subjects are also included (e.g., ["POV", "demi"])
+            other_subjects = [s for s in selected_lower if s not in ["i", "myself", "scene", "pov"]]
+            has_i = "i" in selected_lower or "myself" in selected_lower
+
+            # Build subjects/reference section
+            subjects_text = "Subjects/Reference:\n"
             img_idx = 1
             images_for_this_variation = []
+            use_selfie = True  # Default: use selfie as base image
 
-            # Always include "I/myself" if in selected subjects
-            if "i" in selected_lower or "myself" in selected_lower:
-                subjects_text += f"{img_idx}. I/myself: {selfie_description} (attached image {img_idx})\n"
+            if is_scene_only and not other_subjects and not has_i:
+                # Pure scene shot: only style reference, no people
+                subjects_text += f"{img_idx}. Style reference: Match the visual style of this image (attached image {img_idx})\n"
+                img_idx += 1
+                use_selfie = False
+            elif is_pov:
+                # POV shot: first-person perspective
+                # Style reference first
+                subjects_text += f"{img_idx}. Style reference: Match the visual style of this image (attached image {img_idx})\n"
+                img_idx += 1
+                subjects_text += "Note: FIRST-PERSON POV - show what the subject sees, not the subject themselves\n"
+                use_selfie = False
+
+                # But if other people are visible in POV (e.g., ["POV", "I"] or ["POV", "demi"]), include them!
+                if has_i:
+                    subjects_text += f"{img_idx}. I/myself: {selfie_description} (attached image {img_idx})\n"
+                    images_for_this_variation.append(original_selfie_bytes)
+                    img_idx += 1
+
+                # Add other visible subjects in POV
+                for subject_name in selected_subjects:
+                    subject_lower = subject_name.lower()
+                    if subject_lower not in ["i", "myself", "scene", "pov"] and subject_lower in asset_map:
+                        asset = asset_map[subject_lower]
+                        subjects_text += f"{img_idx}. {asset['name']}: {asset['description']} (attached image {img_idx})\n"
+                        images_for_this_variation.append(asset['image_bytes'])
+                        img_idx += 1
+            else:
+                # Normal variation with people
+                # Include "I/myself" if in selected subjects
+                if has_i:
+                    subjects_text += f"{img_idx}. I/myself: {selfie_description} (attached image {img_idx})\n"
+                    img_idx += 1
+
+                # Style reference
+                subjects_text += f"{img_idx}. Style reference: Match the visual style of this image (attached image {img_idx})\n"
                 img_idx += 1
 
-            # Style reference is always included (image 2)
-            subjects_text += f"{img_idx}. Style reference: Match the visual style of this image (attached image {img_idx})\n"
-            img_idx += 1
-
-            # Add selected assets only
-            for subject_name in selected_subjects:
-                subject_lower = subject_name.lower()
-                if subject_lower not in ["i", "myself"] and subject_lower in asset_map:
-                    asset = asset_map[subject_lower]
-                    subjects_text += f"{img_idx}. {asset['name']}: {asset['description']} (attached image {img_idx})\n"
-                    images_for_this_variation.append(asset['image_bytes'])
-                    img_idx += 1
+                # Add ALL selected assets - if subject is explicitly in the subjects array, include it!
+                for subject_name in selected_subjects:
+                    subject_lower = subject_name.lower()
+                    if subject_lower not in ["i", "myself", "scene", "pov"] and subject_lower in asset_map:
+                        asset = asset_map[subject_lower]
+                        # Always include explicitly selected subjects
+                        subjects_text += f"{img_idx}. {asset['name']}: {asset['description']} (attached image {img_idx})\n"
+                        images_for_this_variation.append(asset['image_bytes'])
+                        img_idx += 1
 
             # Build full prompt
             full_prompt = VARIATION_FULL_PROMPT_TEMPLATE.format(
@@ -589,17 +630,26 @@ class VariationsAgent:
             )
             full_prompts_list.append(full_prompt)
             image_configs.append(images_for_this_variation)
+            use_selfie_flags.append(use_selfie)
 
-            print(f"[VariationsAgent] Variation subjects: {selected_subjects}, prompt: {editing_prompt[:50]}...")
+            print(f"[VariationsAgent] Variation subjects: {selected_subjects}, use_selfie: {use_selfie}, prompt: {editing_prompt[:50]}...")
 
         # Generate with filtered images per variation
         async def generate_single(idx: int) -> bytes:
             full_prompt = full_prompts_list[idx]
-            # Always include style reference (generated image), plus filtered assets
-            additional = [generated_image_bytes] + image_configs[idx]
+            use_selfie = use_selfie_flags[idx]
+
+            if use_selfie:
+                # Normal: selfie as base, style ref + assets as additional
+                base_image = original_selfie_bytes
+                additional = [generated_image_bytes] + image_configs[idx]
+            else:
+                # Scene/POV: generated image as base, only assets as additional
+                base_image = generated_image_bytes
+                additional = image_configs[idx] if image_configs[idx] else None
 
             return await self.generate_fn(
-                image_bytes=original_selfie_bytes,
+                image_bytes=base_image,
                 prompt=full_prompt,
                 aspect_ratio=aspect_ratio,
                 image_size=image_size,
