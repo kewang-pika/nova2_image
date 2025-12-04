@@ -32,7 +32,8 @@ def save_generation(
     variation_full_prompts: list = None,
     aspect_ratio: str = "9:16",
     image_size: str = "1K",
-    aesthetic: dict = None
+    aesthetic: dict = None,
+    outfit_adaptive: bool = True
 ) -> str:
     """
     Save a generation to history.
@@ -49,6 +50,7 @@ def save_generation(
         aspect_ratio: Aspect ratio used
         image_size: Image size used
         aesthetic: Optional aesthetic preferences dict
+        outfit_adaptive: Whether adaptive outfit mode was used
 
     Returns:
         Generation ID
@@ -86,7 +88,8 @@ def save_generation(
         "variations": variation_files,
         "variation_prompts": variation_prompts or [],
         "variation_full_prompts": variation_full_prompts or [],
-        "aesthetic": aesthetic
+        "aesthetic": aesthetic,
+        "outfit_adaptive": outfit_adaptive
     }
 
     metadata_path = os.path.join(gen_dir, "metadata.json")

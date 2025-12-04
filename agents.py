@@ -456,7 +456,7 @@ Rewritten prompt (just the action, nothing else):"""
 
         return rewritten
 
-    def rewrite(self, original_prompt: str, image_bytes: bytes, mentioned_assets: list = None, aesthetic: dict = None) -> dict:
+    def rewrite(self, original_prompt: str, image_bytes: bytes, mentioned_assets: list = None, aesthetic: dict = None, outfit_adaptive: bool = True) -> dict:
         """
         Full prompt enhancement pipeline.
         Runs style detection in parallel with prompt rewriting.
@@ -467,6 +467,8 @@ Rewritten prompt (just the action, nothing else):"""
             mentioned_assets: List of asset dicts with name, description, image_bytes
             aesthetic: Optional dict with visual_style and avoids keys
                 Example: {"visual_style": "35mm film grain", "avoids": ["neon", "cartoon"]}
+            outfit_adaptive: If True (default), AI can adapt outfits to scene.
+                If False, strictly preserve outfits from attachments.
 
         Returns:
             dict with original_prompt, description, rewritten_prompt,
@@ -514,15 +516,32 @@ Rewritten prompt (just the action, nothing else):"""
             print(f"[PromptAgent] Original: {original_prompt}")
             print(f"[PromptAgent] Rewritten: {rewritten}")
             print(f"[PromptAgent] Style: {style_result['style_name']}")
+            print(f"[PromptAgent] Outfit mode: {'ADAPTIVE' if outfit_adaptive else 'STRICT'}")
 
-            # Format structured output
+            # Build outfit instruction based on mode
+            if outfit_adaptive:
+                outfit_instruction = """Subject Outfits: ADAPTIVE MODE
+- You may creatively adapt, modify, or enhance the subject's clothing to better fit the scene, lighting, and mood
+- Maintain the general style/vibe of referenced outfits but adjust details (colors, fit, accessories) as needed
+- Prioritize visual coherence with the environment over exact outfit replication
+- IMPORTANT: If the user explicitly specifies an outfit in their prompt, respect and use that outfit"""
+            else:
+                outfit_instruction = """Subject Outfits: STRICT PRESERVATION MODE
+- You MUST exactly replicate the outfit from the attached reference image(s)
+- Do NOT modify colors, patterns, fit, or any clothing details
+- The outfit should appear identical to the attachment, only adjusted for pose/angle
+- This is a hard requirement - outfit accuracy is critical
+- IMPORTANT: If the user explicitly specifies an outfit in their prompt, respect and use that outfit"""
+
+            # Format structured output with outfit instruction
             structured_output = "Subjects:\n"
             structured_output += description_text
+            structured_output += f"\n\n{outfit_instruction}"
             structured_output += f"\n\nEditing prompt: {rewritten}"
             structured_output += f"\n\nAesthetics/Style: {style_result['style_prompt']}"
 
             # Combine ALL parts for image generation
-            final_prompt = f"Subjects:\n{description_text}\n\nEditing prompt: {rewritten}\n\n{style_result['style_prompt']}"
+            final_prompt = f"Subjects:\n{description_text}\n\n{outfit_instruction}\n\nEditing prompt: {rewritten}\n\n{style_result['style_prompt']}"
 
             return {
                 "original_prompt": original_prompt,
@@ -577,8 +596,9 @@ class VariationsAgent:
 
 Create 4 DIFFERENT shots for an Instagram carousel - same scene, different angles/poses/moments.
 
-KEEP THE SAME:
-- Same people/subjects (identity, face, outfit)
+KEEP THE SAME (CRITICAL):
+- Same people/subjects (identity, face)
+- **OUTFIT MUST BE IDENTICAL** - exact same clothing, colors, patterns, accessories as the first image. Do NOT change any clothing details.
 - Same SCENE and ENVIRONMENT (exact same location/setting as the first image)
 - Same visual style/aesthetic
 - Same story/concept
@@ -589,23 +609,23 @@ VARY THESE within the same scene:
 3. MOMENT: different expressions, interactions, timing
 4. COMPOSITION: subject placement in frame
 
-Think like a photographer doing multiple shots at the SAME LOCATION - capturing different angles and moments of the same scene.
+Think like a photographer doing multiple shots at the SAME LOCATION - capturing different angles and moments of the same scene. The subject's outfit should be EXACTLY the same in every shot.
 
 Output 4 SHORT prompts (1-2 sentences), numbered 1-4.
 
-Example for "encounter a T-Rex on beach" (all on the SAME beach):
+Example for "encounter a T-Rex on beach" (all on the SAME beach, SAME outfit):
 1. Extreme close-up of terrified faces, T-Rex towering behind them
 2. Wide shot from behind, two figures facing the massive T-Rex on the sandy beach
 3. Low angle looking up at them running, T-Rex in pursuit, sand flying
 4. Side profile shot, frozen mid-scream, T-Rex's head entering frame
 
-Example for "dinner date at Beijing night market" (all at the SAME market):
+Example for "dinner date at Beijing night market" (all at the SAME market, SAME outfit):
 1. Close-up of couple laughing, street food stall lights in background
 2. Wide shot of them walking through the crowded market, lanterns overhead
 3. Over-shoulder view as they share food, market bustle behind
 4. Medium shot sitting at a small table, steam rising from dishes
 
-Your 4 variations (same scene, different shots):"""
+Your 4 variations (same scene, same outfit, different shots):"""
 
             response = self.client.models.generate_content(
                 model=self.model,
@@ -692,7 +712,13 @@ Your 4 variations (same scene, different shots):"""
         # Build full prompts list FIRST (before parallel execution)
         full_prompts_list = []
         for variation_prompt in variation_prompts:
-            full_prompt = f"{subjects}\nEditing prompt: {variation_prompt}\n\nIMPORTANT: Keep the SAME scene/setting/environment as the reference image (attached image 2). Only vary the camera angle, pose, and moment - the location and atmosphere should match!"
+            full_prompt = f"""{subjects}
+Editing prompt: {variation_prompt}
+
+CRITICAL REQUIREMENTS:
+- OUTFIT MUST BE IDENTICAL to the reference image (attached image 2) - same clothing, colors, patterns, accessories. Do NOT change any clothing.
+- Keep the SAME scene/setting/environment as the reference image
+- Only vary camera angle, pose, and moment - location, atmosphere, and outfit should match exactly!"""
             full_prompts_list.append(full_prompt)
 
         def generate_single(full_prompt: str) -> bytes:

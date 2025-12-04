@@ -9,8 +9,6 @@ venv/
 # Generated images
 generated_images/
 
-# Asset closet
-closet/
 
 # IDE
 .vscode/

@@ -174,6 +174,12 @@ with st.sidebar:
         help="Use AI to analyze image and improve your prompt"
     )
 
+    outfit_adaptive = st.toggle(
+        "🎨 Adaptive Outfits",
+        value=True,
+        help="ON: AI adapts outfit to scene. OFF: Strict outfit preservation from attachments."
+    )
+
     st.divider()
 
     # Aesthetic Preferences Section
@@ -517,7 +523,7 @@ if generate_clicked:
 
                 if use_ai_rewrite:
                     with st.status("Analyzing image and enhancing prompt..."):
-                        rewrite_result = rewrite_prompt(prompt, image_bytes, mentioned_assets, aesthetic_prefs)
+                        rewrite_result = rewrite_prompt(prompt, image_bytes, mentioned_assets, aesthetic_prefs, outfit_adaptive)
                         st.session_state.image_description = rewrite_result["structured_output"]
                         st.session_state.final_prompt = rewrite_result["rewritten_prompt"]
                         st.session_state.detected_style = rewrite_result.get("style_name", "Editorial")
@@ -582,7 +588,8 @@ if generate_clicked:
                     main_image_bytes=result_bytes,
                     aspect_ratio=aspect_ratio,
                     image_size=image_size,
-                    aesthetic=aesthetic_prefs
+                    aesthetic=aesthetic_prefs,
+                    outfit_adaptive=outfit_adaptive
                 )
                 st.session_state.current_gen_id = gen_id
 
@@ -806,6 +813,8 @@ else:
                 with col_info:
                     st.markdown(f"**🎨 Style:** `{item.get('style_name', 'N/A')}`")
                     st.markdown(f"**📐 Aspect:** `{item.get('aspect_ratio', 'N/A')}` | **Size:** `{item.get('image_size', 'N/A')}`")
+                    outfit_mode = "Adaptive" if item.get('outfit_adaptive', True) else "Strict"
+                    st.markdown(f"**👔 Outfit:** `{outfit_mode}`")
 
                     st.markdown("**💬 Original Prompt:**")
                     st.code(item.get("original_prompt", "N/A"), language=None)

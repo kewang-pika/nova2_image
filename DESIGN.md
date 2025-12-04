@@ -199,6 +199,21 @@ User Prompt
 }
 ```
 
+**Structured Prompt Format:**
+```
+Subjects:
+1. I/myself: [description] (attached image 1)
+2. outfit1: [description] (attached image 2)
+
+Subject Outfits: [ADAPTIVE or STRICT MODE]
+- ADAPTIVE: AI can modify outfit to fit scene
+- STRICT: Exact replication of attached outfit
+
+Editing prompt: [enhanced user prompt]
+
+Aesthetics/Style: [style preset text]
+```
+
 ---
 
 ### Agent 3: VariationsAgent

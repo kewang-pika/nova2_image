@@ -260,7 +260,7 @@ def detect_style(prompt: str) -> dict:
     return style_agent.detect(prompt)
 
 
-def rewrite_prompt(original_prompt: str, image_bytes: bytes, mentioned_assets: list = None, aesthetic: dict = None) -> dict:
+def rewrite_prompt(original_prompt: str, image_bytes: bytes, mentioned_assets: list = None, aesthetic: dict = None, outfit_adaptive: bool = True) -> dict:
     """Rewrite and enhance prompt. Wrapper for PromptAgent.rewrite().
 
     Args:
@@ -269,8 +269,10 @@ def rewrite_prompt(original_prompt: str, image_bytes: bytes, mentioned_assets: l
         mentioned_assets: List of asset dicts
         aesthetic: Optional dict with visual_style and avoids keys
             Example: {"visual_style": "35mm film grain", "avoids": ["neon", "cartoon"]}
+        outfit_adaptive: If True (default), AI can adapt outfits to scene.
+            If False, strictly preserve outfits from attachments.
     """
-    return prompt_agent.rewrite(original_prompt, image_bytes, mentioned_assets, aesthetic)
+    return prompt_agent.rewrite(original_prompt, image_bytes, mentioned_assets, aesthetic, outfit_adaptive)
 
 
 def generate_variation_prompts(structured_prompt: str, image_bytes: bytes) -> list:
